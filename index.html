@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,9 +14,9 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, setDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // CHAVES DO FIREBASE E GEMINI (SOCIEDADE DR)
+        // CHAVE DO FIREBASE (BANCO DE DADOS)
         const firebaseConfig = {
-            apiKey: "AIzaSyDgnDHu-dHCo5oZRo113M5jQ1kxwX9_1uE", // Usada tanto no Firebase quanto na IA
+            apiKey: "AIzaSyDgnDHu-dHCo5oZRo113M5jQ1kxwX9_1uE",
             authDomain: "sociedade-dr.firebaseapp.com",
             projectId: "sociedade-dr",
             storageBucket: "sociedade-dr.firebasestorage.app",
@@ -24,6 +24,9 @@
             appId: "1:200039389906:web:7e78b4389e99bfcb536b0b",
             measurementId: "G-18PGSQ0RKF"
         };
+
+        // NOVA CHAVE EXCLUSIVA MINDEE (LEITURA DE NOTAS)
+        const mindeeApiKey = "md_kn0mRSDwl2MHTU_BVLd5crY2Z7DEPKLF6A95He_AizU";
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -36,7 +39,6 @@
         let editandoId = null;
         let saldoInicialObj = { valor: 0, credor: "Nenhum" };
 
-        // CARREGAR SALDO INICIAL
         onSnapshot(configDocRef, (docSnap) => {
             if (docSnap.exists()) {
                 saldoInicialObj = docSnap.data();
@@ -44,7 +46,6 @@
             atualizarTela();
         });
 
-        // CARREGAR CENTROS DE CUSTO
         onSnapshot(colCcRef, (snapshot) => {
             const ccNuvem = [];
             snapshot.forEach(d => ccNuvem.push(d.data().nome));
@@ -54,7 +55,6 @@
             atualizarSelectsCC();
         });
 
-        // ESCUTAR LANÇAMENTOS EM TEMPO REAL
         const q = query(colRef, orderBy("data", "asc"));
         onSnapshot(q, (snapshot) => {
             lancamentos = [];
@@ -67,7 +67,6 @@
             atualizarTela();
         });
 
-        // CONVERTER ARQUIVO PARA BASE64
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 if (!file) resolve(null);
@@ -78,7 +77,7 @@
             });
         }
 
-        // LER NOTA FISCAL COM IA GEMINI
+        // LER NOTA FISCAL COM IA MINDEE
         window.lerComprovanteIA = async function() {
             const fileInput = document.getElementById('anexo-pdf');
             if (fileInput.files.length === 0) {
@@ -88,52 +87,50 @@
             
             const file = fileInput.files[0];
             const statusElem = document.getElementById('status-ocr');
-            statusElem.innerText = "⏳ Lendo a nota com Inteligência Artificial... Aguarde.";
+            statusElem.innerText = "⏳ A ler a nota com a IA do Mindee... Aguarde.";
             statusElem.className = "text-[10px] font-bold text-amber-600 mt-1 block";
 
             try {
-                const base64Data = await fileToBase64(file);
-                const pureBase64 = base64Data.split(',')[1];
-                const mimeType = file.type || 'image/jpeg';
+                const formData = new FormData();
+                formData.append("document", file);
 
-                const promptText = `Analise este comprovante ou nota fiscal e extraia as seguintes informações rigorosamente em formato JSON:
-{"descricao": "resumo breve do fornecedor ou produto", "valor": 0.00, "data": "YYYY-MM-DD", "categoria": "escolher estritamente uma destas opções: Arrendamento, Nutrição / Ração, Mão de Obra, Infraestrutura, Frete / Logística, Compra de Gado, Impostos / Taxas, Outros"}
-Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
-
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${firebaseConfig.apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [
-                                { text: promptText },
-                                { inline_data: { mime_type: mimeType, data: pureBase64 } }
-                            ]
-                        }]
-                    })
+                const response = await fetch("https://api.mindee.net/v1/products/mindee/expense_receipts/v5/predict", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Token ${mindeeApiKey}`
+                    },
+                    body: formData
                 });
 
                 const result = await response.json();
-                if (result.error) throw new Error(result.error.message);
+
+                if (!response.ok || (result.api_request && result.api_request.status === "failure")) {
+                    throw new Error(result.api_request?.error?.message || "Erro desconhecido na API do Mindee");
+                }
+
+                const prediction = result.document.inference.prediction;
+
+                if (prediction.supplier_name && prediction.supplier_name.value) {
+                    document.getElementById('descricao').value = prediction.supplier_name.value;
+                }
                 
-                const rawText = result.candidates[0].content.parts[0].text.trim().replace(/```json/g, '').replace(/```/g, '');
-                const dataJSON = JSON.parse(rawText);
+                if (prediction.total_amount && prediction.total_amount.value) {
+                    document.getElementById('valor').value = prediction.total_amount.value;
+                }
+                
+                if (prediction.date && prediction.date.value) {
+                    document.getElementById('data').value = prediction.date.value;
+                }
 
-                if (dataJSON.descricao) document.getElementById('descricao').value = dataJSON.descricao;
-                if (dataJSON.valor) document.getElementById('valor').value = dataJSON.valor;
-                if (dataJSON.data) document.getElementById('data').value = dataJSON.data;
-                if (dataJSON.categoria) document.getElementById('categoria').value = dataJSON.categoria;
-
-                statusElem.innerText = "✅ Dados extraídos com sucesso! Revise, escolha quem pagou e salve.";
+                statusElem.innerText = "✅ Dados extraídos com sucesso! Selecione a Categoria e guarde.";
                 statusElem.className = "text-[10px] font-bold text-emerald-700 mt-1 block";
             } catch (err) {
                 console.error(err);
-                statusElem.innerText = "❌ Falha ao ler a nota. Preencha os campos manualmente.";
+                statusElem.innerText = "❌ Erro do Mindee: " + err.message;
                 statusElem.className = "text-[10px] font-bold text-red-600 mt-1 block";
             }
         };
 
-        // SALVAR OU EDITAR LANÇAMENTO
         document.getElementById('form-lancamento').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -153,42 +150,21 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
 
             try {
                 if (editandoId) {
-                    const updateObj = { 
-                        descricao, 
-                        valor, 
-                        data, 
-                        categoria, 
-                        centroCusto, 
-                        socio,
-                        pendente: isPendente
-                    };
-                    
-                    if (anexoData) {
-                        updateObj.anexoData = anexoData;
-                    }
-
+                    const updateObj = { descricao, valor, data, categoria, centroCusto, socio, pendente: isPendente };
+                    if (anexoData) updateObj.anexoData = anexoData;
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), updateObj);
                     cancelarEdicao();
                 } else {
                     await addDoc(colRef, {
-                        descricao,
-                        valor,
-                        data,
-                        categoria,
-                        centroCusto: centroCusto || "Geral",
-                        socio,
-                        pendente: isPendente,
-                        anexoData: anexoData || null,
-                        criadoEm: new Date().toISOString()
+                        descricao, valor, data, categoria, centroCusto: centroCusto || "Geral", socio, pendente: isPendente, anexoData: anexoData || null, criadoEm: new Date().toISOString()
                     });
                     limparFormulario();
                 }
             } catch (err) {
-                alert("Erro ao salvar no banco de dados: " + err.message);
+                alert("Erro ao guardar na base de dados: " + err.message);
             }
         });
 
-        // EXPORTAR PARA EXCEL (.XLSX)
         window.exportarExcel = function() {
             if (lancamentos.length === 0) {
                 alert("Não há lançamentos para exportar.");
@@ -237,7 +213,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             XLSX.writeFile(workbook, `Extrato_Sociedade_DR_${dataAtual}.xlsx`);
         };
 
-        // DEFINIR SALDO INICIAL
         window.configurarSaldoInicial = async function() {
             const valStr = prompt("Digite o valor do Saldo Inicial acumulado (R$):", saldoInicialObj.valor || "0");
             if (valStr === null) return;
@@ -245,7 +220,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
 
             let credor = "Nenhum";
             if (val > 0) {
-                const opcao = prompt("Quem tem a RECEBER esse valor inicial?\nDigite 1 para DEIVID\nDigite 2 para RONEI", "1");
+                const opcao = prompt("Quem tem a RECEBER este valor inicial?\nDigite 1 para DEIVID\nDigite 2 para RONEI", "1");
                 if (opcao === "1") credor = "Deivid";
                 if (opcao === "2") credor = "Ronei";
             }
@@ -254,11 +229,10 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                 await setDoc(configDocRef, { valor: val, credor: credor });
                 alert("Saldo inicial atualizado com sucesso!");
             } catch(e) {
-                alert("Erro ao salvar saldo inicial.");
+                alert("Erro ao guardar saldo inicial.");
             }
         };
 
-        // PREPARAR EDICAO
         window.prepararEdicao = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item) return;
@@ -287,7 +261,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
 
         window.removerAnexoExistente = async function() {
             if (!editandoId) return;
-            if (confirm("Deseja remover o anexo/comprovante deste lançamento?")) {
+            if (confirm("Deseja remover o anexo/comprovativo deste lançamento?")) {
                 try {
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), { anexoData: null });
                     document.getElementById('container-remover-anexo').classList.add('hidden');
@@ -301,7 +275,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
         window.cancelarEdicao = function() {
             editandoId = null;
             limparFormulario();
-            document.getElementById('btn-submit').innerText = "☁️ Salvar no Banco de Dados (Nuvem)";
+            document.getElementById('btn-submit').innerText = "☁️ Guardar na Base de Dados (Nuvem)";
             document.getElementById('btn-submit').className = "w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-sm transition shadow";
             document.getElementById('btn-cancelar-edicao').classList.add('hidden');
             document.getElementById('container-remover-anexo').classList.add('hidden');
@@ -315,7 +289,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             document.getElementById('status-ocr').innerText = '';
         }
 
-        // EXCLUIR ITEM
         window.apagarItem = async function(idDoc) {
             if(confirm("Deseja excluir este lançamento permanentemente?")) {
                 try {
@@ -326,7 +299,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             }
         };
 
-        // VISUALIZAR ANEXO (COMPATÍVEL COM SAFARI / IOS)
         window.abrirAnexo = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item || !item.anexoData) return;
@@ -352,15 +324,14 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             }
         };
 
-        // GERENCIAR CENTROS DE CUSTO
         window.adicionarCentroCusto = async function() {
             const novoCc = prompt("Digite o nome do novo Centro de Custo (Ex: Retiro 1, Lote Bezerros):");
             if (novoCc && novoCc.trim() !== "") {
                 try {
                     await addDoc(colCcRef, { nome: novoCc.trim() });
-                    alert("Centro de custo cadastrado!");
+                    alert("Centro de custo registado!");
                 } catch (e) {
-                    alert("Erro ao cadastrar centro de custo.");
+                    alert("Erro ao registar centro de custo.");
                 }
             }
         };
@@ -384,7 +355,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             if (valorAnteriorFiltro) selectFiltro.value = valorAnteriorFiltro;
         }
 
-        // FUNÇÃO DE ATUALIZAR TELA E FILTRAR
         window.atualizarTela = function() {
             const corpoTabela = document.getElementById('tabela-corpo');
             if(!corpoTabela) return;
@@ -453,9 +423,9 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                         </div>
                         <div class="text-[10px] text-slate-400 font-normal">🏷️ ${item.centroCusto || 'Geral'} | ${item.categoria || 'Outros'}</div>
                     </td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei > 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid > 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap ${corTexto}">${sinalTexto}R$ ${Math.abs(saldoAcumulado).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei > 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
+                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid > 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
+                    <td class="p-1.5 text-right font-mono whitespace-nowrap ${corTexto}">${sinalTexto}R$ ${Math.abs(saldoAcumulado).toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     <td class="p-1.5 text-center no-print whitespace-nowrap">
                         <div class="flex items-center justify-center gap-1.5">
                             ${item.anexoData ? `<button onclick="abrirAnexo('${item.idDoc}')" title="Ver Anexo/PDF" class="text-blue-600 hover:text-blue-800 text-xs">📄</button>` : ''}
@@ -467,12 +437,12 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                 corpoTabela.appendChild(tr);
             });
 
-            document.getElementById('resumo-ronei').innerText = `R$ ${totalRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            document.getElementById('resumo-deivid').innerText = `R$ ${totalDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById('resumo-ronei').innerText = `R$ ${totalRonei.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById('resumo-deivid').innerText = `R$ ${totalDeivid.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             
             const saldoIniElem = document.getElementById('resumo-saldo-inicial');
             if (saldoInicialObj.valor > 0) {
-                saldoIniElem.innerText = `R$ ${saldoInicialObj.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${saldoInicialObj.credor} a receber)`;
+                saldoIniElem.innerText = `R$ ${saldoInicialObj.valor.toLocaleString('pt-PT', {minimumFractionDigits: 2})} (${saldoInicialObj.credor} a receber)`;
             } else {
                 saldoIniElem.innerText = 'R$ 0,00 (Zerado)';
             }
@@ -481,10 +451,10 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             const resumoPosicaoElem = document.getElementById('resumo-posicao');
 
             if (posicaoLiquida > 0) {
-                resumoPosicaoElem.innerText = `DEIVID TEM A RECEBER R$ ${posicaoLiquida.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} DE RONEI`;
+                resumoPosicaoElem.innerText = `DEIVID TEM A RECEBER R$ ${posicaoLiquida.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})} DE RONEI`;
                 resumoPosicaoElem.className = 'p-2 text-right font-bold text-emerald-700';
             } else if (posicaoLiquida < 0) {
-                resumoPosicaoElem.innerText = `DEIVID DEVE R$ ${Math.abs(posicaoLiquida).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} PARA RONEI`;
+                resumoPosicaoElem.innerText = `DEIVID DEVE R$ ${Math.abs(posicaoLiquida).toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})} PARA RONEI`;
                 resumoPosicaoElem.className = 'p-2 text-right font-bold text-red-700';
             } else {
                 resumoPosicaoElem.innerText = 'SALDOS ZERADOS / QUITADOS';
@@ -511,7 +481,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
         window.gerarPDF = function() { window.print(); };
 
         document.getElementById('data').valueAsDate = new Date();
-        document.getElementById('data-extrato').innerText = new Date().toLocaleDateString('pt-BR');
+        document.getElementById('data-extrato').innerText = new Date().toLocaleDateString('pt-PT');
     </script>
 
     <style>
@@ -519,39 +489,12 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
         
         @media print {
             .no-print { display: none !important; }
-            html, body { 
-                background: #ffffff !important; 
-                padding: 0 !important; 
-                margin: 0 !important; 
-                width: 100% !important; 
-            }
-            .print-container { 
-                max-width: 100% !important; 
-                box-shadow: none !important; 
-                border: none !important; 
-                padding: 0 !important; 
-                margin: 0 !important; 
-            }
-            @page { 
-                size: A4 portrait; 
-                margin: 0.8cm 1cm 0.8cm 1cm; 
-            }
-            table.data-table { 
-                width: 100% !important; 
-                border-collapse: collapse !important; 
-                table-layout: auto !important; 
-            }
-            table.data-table th, table.data-table td { 
-                border: 1px solid #cbd5e1 !important; 
-                padding: 4px 6px !important; 
-                font-size: 7.5pt !important; 
-            }
-            table.data-table th {
-                background-color: #065f46 !important;
-                color: #ffffff !important;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
+            html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
+            .print-container { max-width: 100% !important; box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; }
+            @page { size: A4 portrait; margin: 0.8cm 1cm 0.8cm 1cm; }
+            table.data-table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; }
+            table.data-table th, table.data-table td { border: 1px solid #cbd5e1 !important; padding: 4px 6px !important; font-size: 7.5pt !important; }
+            table.data-table th { background-color: #065f46 !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -559,7 +502,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
 
     <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-3 md:p-6 print-container">
         
-        <!-- CABEÇALHO DA PÁGINA -->
         <div class="border-b-2 border-emerald-800 pb-2 mb-3 flex justify-between items-end">
             <div>
                 <h1 class="text-lg md:text-2xl font-bold text-emerald-800 uppercase tracking-tight">EXTRATO DE CONCILIAÇÃO E ACERTO DE SÓCIOS</h1>
@@ -571,7 +513,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             </div>
         </div>
 
-        <!-- FORMULÁRIO DE LANÇAMENTO -->
         <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 no-print">
             <div class="flex justify-between items-center mb-3">
                 <h2 class="text-sm font-bold text-slate-700">➕ Lançamento / Edição</h2>
@@ -594,7 +535,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                     <div>
                         <label class="block text-xs font-medium text-slate-600">Centro de Custo</label>
                         <select id="centro-custo" class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 bg-white">
-                            <!-- Preenchido via JS -->
                         </select>
                     </div>
                     <div>
@@ -642,7 +582,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                 <div class="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200">
                     <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-800">
                         <input type="checkbox" id="is-pendente" class="rounded text-amber-600 focus:ring-amber-500">
-                        🟡 Salvar como Pendente / Rascunho (Finalizar depois)
+                        🟡 Guardar como Pendente / Rascunho (Finalizar depois)
                     </label>
 
                     <div id="container-remover-anexo" class="hidden">
@@ -654,7 +594,7 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
 
                 <div class="flex gap-2">
                     <button type="submit" id="btn-submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-sm transition shadow">
-                        ☁️ Salvar no Banco de Dados (Nuvem)
+                        ☁️ Guardar na Base de Dados (Nuvem)
                     </button>
                     <button type="button" id="btn-cancelar-edicao" onclick="cancelarEdicao()" class="hidden bg-slate-400 hover:bg-slate-500 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
                         Cancelar
@@ -663,7 +603,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             </form>
         </div>
 
-        <!-- FILTROS DE CONSULTA -->
         <div class="mb-4 p-3 bg-slate-100 rounded-xl border border-slate-200 no-print">
             <div class="flex justify-between items-center mb-2">
                 <span class="text-xs font-bold text-slate-700">🔍 Filtros de Consulta</span>
@@ -690,7 +629,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                 <div>
                     <label class="block text-[10px] text-slate-500">Centro de Custo</label>
                     <select id="filtro-cc" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
-                        <!-- Preenchido via JS -->
                     </select>
                 </div>
                 <div>
@@ -719,7 +657,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             </div>
         </div>
 
-        <!-- CONTROLES -->
         <div class="flex justify-between items-center mb-3 no-print">
             <h2 class="text-sm font-bold text-slate-700">📋 Extrato em Nuvem</h2>
             <div class="flex gap-2">
@@ -732,7 +669,6 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
             </div>
         </div>
 
-        <!-- TABELA DE LANÇAMENTOS -->
         <div class="overflow-x-auto mb-4">
             <table class="data-table w-full text-xs border-collapse border border-slate-300">
                 <thead>
@@ -747,12 +683,11 @@ Retorne apenas o JSON puro. Se não encontrar algo, deixe em branco ou zerado.`;
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
-                    <tr><td colspan="7" class="text-center py-4 text-slate-400">Carregando dados...</td></tr>
+                    <tr><td colspan="7" class="text-center py-4 text-slate-400">A carregar dados...</td></tr>
                 </tbody>
             </table>
         </div>
 
-        <!-- RESUMO CONSOLIDADO -->
         <div class="flex justify-end mt-4">
             <table class="w-full md:w-3/5 border-1.5 border-slate-900 text-xs rounded overflow-hidden">
                 <thead>
