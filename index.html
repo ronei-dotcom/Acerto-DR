@@ -25,9 +25,6 @@
             measurementId: "G-18PGSQ0RKF"
         };
 
-        // NOVA CHAVE EXCLUSIVA MINDEE (LEITURA DE NOTAS)
-        const mindeeApiKey = "md_kn0mRSDwl2MHTU_BVLd5crY2Z7DEPKLF6A95He_AizU";
-
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const colRef = collection(db, "lancamentos_dr");
@@ -85,6 +82,9 @@
                 return;
             }
             
+            // Tenta pegar a chave gravada no celular, senão usa a antiga
+            let mindeeApiKey = localStorage.getItem('dr_mindee_key') || "md_kn0mRSDwl2MHTU_BVLd5crY2Z7DEPKLF6A95He_AizU";
+
             const file = fileInput.files[0];
             const statusElem = document.getElementById('status-ocr');
             statusElem.innerText = "⏳ A ler a nota com a IA do Mindee... Aguarde.";
@@ -104,14 +104,28 @@
 
                 const result = await response.json();
 
+                // SE DER ERRO DE AUTORIZAÇÃO, ABRE POPUP PARA COLAR A CHAVE CORRETA NA HORA
+                if (response.status === 401 || (result.api_request && result.api_request.status === "failure" && result.api_request.error.message.includes("Authorization"))) {
+                    const novaChave = prompt("❌ Chave inválida ou expirada!\n\nVá no site do Mindee > API Keys, crie uma chave nova e cole aqui embaixo:");
+                    
+                    if (novaChave && novaChave.trim() !== "") {
+                        localStorage.setItem('dr_mindee_key', novaChave.trim());
+                        alert("✅ Chave guardada no seu telemóvel/computador! Clique em 'Ler nota com IA' novamente para testar.");
+                    }
+                    throw new Error("Chave de autorização atualizada pelo utilizador. Necessário tentar novamente.");
+                }
+
                 if (!response.ok || (result.api_request && result.api_request.status === "failure")) {
                     throw new Error(result.api_request?.error?.message || "Erro desconhecido na API do Mindee");
                 }
 
                 const prediction = result.document.inference.prediction;
 
+                // PREENCHIMENTO DOS CAMPOS
                 if (prediction.supplier_name && prediction.supplier_name.value) {
                     document.getElementById('descricao').value = prediction.supplier_name.value;
+                } else if (prediction.merchant_name && prediction.merchant_name.value) {
+                    document.getElementById('descricao').value = prediction.merchant_name.value;
                 }
                 
                 if (prediction.total_amount && prediction.total_amount.value) {
