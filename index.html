@@ -12,7 +12,7 @@
     <!-- SDKs do Firebase v10 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, setDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // CHAVES DO FIREBASE (SOCIEDADE DR)
         const firebaseConfig = {
@@ -29,10 +29,20 @@
         const db = getFirestore(app);
         const colRef = collection(db, "lancamentos_dr");
         const colCcRef = collection(db, "centros_custo_dr");
+        const configDocRef = doc(db, "configuracoes_dr", "saldo_inicial");
 
         let lancamentos = [];
         let centrosCusto = ["Geral", "Arrendamento", "Nutrição / Ração", "Mão de Obra", "Infraestrutura", "Frete", "Compra de Gado", "Outros"];
         let editandoId = null;
+        let saldoInicialObj = { valor: 0, credor: "Nenhum" };
+
+        // CARREGAR SALDO INICIAL
+        onSnapshot(configDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                saldoInicialObj = docSnap.data();
+            }
+            atualizarTela();
+        });
 
         // CARREGAR CENTROS DE CUSTO
         onSnapshot(colCcRef, (snapshot) => {
@@ -57,7 +67,7 @@
             atualizarTela();
         });
 
-        // CONVERTER ARQUIVO PDF/IMAGEM PARA BASE64
+        // CONVERTER ARQUIVO PARA BASE64
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 if (!file) resolve(null);
@@ -73,11 +83,12 @@
             e.preventDefault();
 
             const descricao = document.getElementById('descricao').value;
-            const valor = parseFloat(document.getElementById('valor').value);
+            const valor = parseFloat(document.getElementById('valor').value) || 0;
             const data = document.getElementById('data').value;
             const categoria = document.getElementById('categoria').value;
             const centroCusto = document.getElementById('centro-custo').value;
             const socio = document.getElementById('socio-pagador').value;
+            const isPendente = document.getElementById('is-pendente').checked;
             const fileInput = document.getElementById('anexo-pdf');
 
             let anexoData = null;
@@ -87,8 +98,19 @@
 
             try {
                 if (editandoId) {
-                    const updateObj = { descricao, valor, data, categoria, centroCusto, socio };
-                    if (anexoData) updateObj.anexoData = anexoData;
+                    const updateObj = { 
+                        descricao, 
+                        valor, 
+                        data, 
+                        categoria, 
+                        centroCusto, 
+                        socio,
+                        pendente: isPendente
+                    };
+                    
+                    if (anexoData) {
+                        updateObj.anexoData = anexoData;
+                    }
 
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), updateObj);
                     cancelarEdicao();
@@ -100,17 +122,88 @@
                         categoria,
                         centroCusto: centroCusto || "Geral",
                         socio,
+                        pendente: isPendente,
                         anexoData: anexoData || null,
                         criadoEm: new Date().toISOString()
                     });
                     limparFormulario();
                 }
             } catch (err) {
-                alert("Erro ao salvar: " + err.message);
+                alert("Erro ao salvar no banco de dados: " + err.message);
             }
         });
 
-        // EDITAR ITEM
+        // EXPORTAR PARA EXCEL (.XLSX)
+        window.exportarExcel = function() {
+            if (lancamentos.length === 0) {
+                alert("Não há lançamentos para exportar.");
+                return;
+            }
+
+            let totalRonei = 0;
+            let totalDeivid = 0;
+            let saldoAcumulado = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0));
+
+            const dadosExcel = lancamentos.map((item, index) => {
+                let aporteRonei = 0;
+                let aporteDeivid = 0;
+
+                if (item.categoria === 'Transferência entre Sócios') {
+                    if (item.socio === 'Ronei') totalRonei += item.valor * 2;
+                    else if (item.socio === 'Deivid') totalDeivid += item.valor * 2;
+                } else {
+                    aporteRonei = (item.socio === 'Ronei') ? item.valor : 0;
+                    aporteDeivid = (item.socio === 'Deivid') ? item.valor : 0;
+                    totalRonei += aporteRonei;
+                    totalDeivid += aporteDeivid;
+                }
+
+                saldoAcumulado = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0)) + ((totalDeivid - totalRonei) / 2.0);
+
+                return {
+                    "Nº": index + 1,
+                    "Data": formatarData(item.data),
+                    "Descrição": item.descricao,
+                    "Centro de Custo": item.centroCusto || 'Geral',
+                    "Categoria": item.categoria || 'Outros',
+                    "Sócio Pagador": item.socio,
+                    "Status": item.pendente ? "🟡 Pendente" : "Concluído",
+                    "Ronei (R$)": aporteRonei,
+                    "Deivid (R$)": aporteDeivid,
+                    "Saldo Deivid (R$)": saldoAcumulado
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(dadosExcel);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Sociedade DR");
+
+            const dataAtual = new Date().toISOString().slice(0,10);
+            XLSX.writeFile(workbook, `Extrato_Sociedade_DR_${dataAtual}.xlsx`);
+        };
+
+        // DEFINIR SALDO INICIAL
+        window.configurarSaldoInicial = async function() {
+            const valStr = prompt("Digite o valor do Saldo Inicial acumulado (R$):", saldoInicialObj.valor || "0");
+            if (valStr === null) return;
+            const val = parseFloat(valStr.replace(',', '.')) || 0;
+
+            let credor = "Nenhum";
+            if (val > 0) {
+                const opcao = prompt("Quem tem a RECEBER esse valor inicial?\nDigite 1 para DEIVID\nDigite 2 para RONEI", "1");
+                if (opcao === "1") credor = "Deivid";
+                if (opcao === "2") credor = "Ronei";
+            }
+
+            try {
+                await setDoc(configDocRef, { valor: val, credor: credor });
+                alert("Saldo inicial atualizado com sucesso!");
+            } catch(e) {
+                alert("Erro ao salvar saldo inicial.");
+            }
+        };
+
+        // PREPARAR EDICAO
         window.prepararEdicao = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item) return;
@@ -122,11 +215,31 @@
             document.getElementById('categoria').value = item.categoria || 'Outros';
             document.getElementById('centro-custo').value = item.centroCusto || 'Geral';
             document.getElementById('socio-pagador').value = item.socio;
+            document.getElementById('is-pendente').checked = !!item.pendente;
+
+            if (item.anexoData) {
+                document.getElementById('container-remover-anexo').classList.remove('hidden');
+            } else {
+                document.getElementById('container-remover-anexo').classList.add('hidden');
+            }
 
             document.getElementById('btn-submit').innerText = "💾 Atualizar Lançamento";
             document.getElementById('btn-submit').className = "w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-lg text-sm transition shadow";
             document.getElementById('btn-cancelar-edicao').classList.remove('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        window.removerAnexoExistente = async function() {
+            if (!editandoId) return;
+            if (confirm("Deseja remover o anexo/comprovante deste lançamento?")) {
+                try {
+                    await updateDoc(doc(db, "lancamentos_dr", editandoId), { anexoData: null });
+                    document.getElementById('container-remover-anexo').classList.add('hidden');
+                    alert("Anexo removido com sucesso!");
+                } catch(e) {
+                    alert("Erro ao remover anexo.");
+                }
+            }
         };
 
         window.cancelarEdicao = function() {
@@ -135,12 +248,14 @@
             document.getElementById('btn-submit').innerText = "☁️ Salvar no Banco de Dados (Nuvem)";
             document.getElementById('btn-submit').className = "w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-sm transition shadow";
             document.getElementById('btn-cancelar-edicao').classList.add('hidden');
+            document.getElementById('container-remover-anexo').classList.add('hidden');
         };
 
         function limparFormulario() {
             document.getElementById('descricao').value = '';
             document.getElementById('valor').value = '';
             document.getElementById('anexo-pdf').value = '';
+            document.getElementById('is-pendente').checked = false;
         }
 
         // EXCLUIR ITEM
@@ -154,12 +269,30 @@
             }
         };
 
-        // VISUALIZAR ANEXO
+        // VISUALIZAR ANEXO (COMPATÍVEL COM SAFARI / IOS)
         window.abrirAnexo = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item || !item.anexoData) return;
-            const win = window.open();
-            win.document.write(`<iframe src="${item.anexoData}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+
+            try {
+                const arr = item.anexoData.split(',');
+                const mime = arr[0].match(/:(.*?);/)[1];
+                const bstr = atob(arr[1]);
+                let n = bstr.length;
+                const u8arr = new Uint8Array(n);
+                while (n--) {
+                    u8arr[n] = bstr.charCodeAt(n);
+                }
+                const blob = new Blob([u8arr], { type: mime });
+                const blobUrl = URL.createObjectURL(blob);
+
+                const newWindow = window.open(blobUrl, '_blank');
+                if (!newWindow) {
+                    window.location.href = blobUrl;
+                }
+            } catch (e) {
+                window.open(item.anexoData, '_blank');
+            }
         };
 
         // GERENCIAR CENTROS DE CUSTO
@@ -179,18 +312,25 @@
             const selectForm = document.getElementById('centro-custo');
             const selectFiltro = document.getElementById('filtro-cc');
 
+            const valorAnteriorForm = selectForm.value;
+            const valorAnteriorFiltro = selectFiltro.value;
+
             selectForm.innerHTML = '';
-            selectFiltro.innerHTML = '<option value="">Todos</option>';
+            selectFiltro.innerHTML = '<option value="">Todos os Centros de Custo</option>';
 
             centrosCusto.forEach(cc => {
                 selectForm.innerHTML += `<option value="${cc}">${cc}</option>`;
                 selectFiltro.innerHTML += `<option value="${cc}">${cc}</option>`;
             });
+
+            if (valorAnteriorForm) selectForm.value = valorAnteriorForm;
+            if (valorAnteriorFiltro) selectFiltro.value = valorAnteriorFiltro;
         }
 
-        // ATUALIZAR TABELA
-        function atualizarTela() {
+        // FUNÇÃO DE ATUALIZAR TELA E FILTRAR
+        window.atualizarTela = function() {
             const corpoTabela = document.getElementById('tabela-corpo');
+            if(!corpoTabela) return;
             corpoTabela.innerHTML = '';
 
             const filtroDataIni = document.getElementById('filtro-data-ini').value;
@@ -198,6 +338,7 @@
             const filtroPagador = document.getElementById('filtro-pagador').value;
             const filtroCategoria = document.getElementById('filtro-categoria').value;
             const filtroCC = document.getElementById('filtro-cc').value;
+            const filtroStatus = document.getElementById('filtro-status').value;
 
             let lancamentosFiltrados = lancamentos.filter(item => {
                 if (filtroDataIni && item.data < filtroDataIni) return false;
@@ -205,6 +346,8 @@
                 if (filtroPagador && item.socio !== filtroPagador) return false;
                 if (filtroCategoria && item.categoria !== filtroCategoria) return false;
                 if (filtroCC && (item.centroCusto || 'Geral') !== filtroCC) return false;
+                if (filtroStatus === 'pendentes' && !item.pendente) return false;
+                if (filtroStatus === 'concluidos' && item.pendente) return false;
                 return true;
             });
 
@@ -212,28 +355,45 @@
             let totalDeivid = 0;
 
             if (lancamentosFiltrados.length === 0) {
-                corpoTabela.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-slate-400">Nenhum lançamento encontrado.</td></tr>';
+                corpoTabela.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-slate-400">Nenhum lançamento encontrado com os filtros selecionados.</td></tr>';
             }
 
+            let saldoAcumulado = 0;
+            if (saldoInicialObj.credor === 'Deivid') saldoAcumulado = saldoInicialObj.valor;
+            if (saldoInicialObj.credor === 'Ronei') saldoAcumulado = -saldoInicialObj.valor;
+
             lancamentosFiltrados.forEach((item, index) => {
-                let aporteRonei = (item.socio === 'Ronei') ? item.valor : 0;
-                let aporteDeivid = (item.socio === 'Deivid') ? item.valor : 0;
+                let aporteRonei = 0;
+                let aporteDeivid = 0;
 
-                totalRonei += aporteRonei;
-                totalDeivid += aporteDeivid;
+                if (item.categoria === 'Transferência entre Sócios') {
+                    if (item.socio === 'Ronei') {
+                        totalRonei += item.valor * 2;
+                    } else if (item.socio === 'Deivid') {
+                        totalDeivid += item.valor * 2;
+                    }
+                } else {
+                    aporteRonei = (item.socio === 'Ronei') ? item.valor : 0;
+                    aporteDeivid = (item.socio === 'Deivid') ? item.valor : 0;
+                    totalRonei += aporteRonei;
+                    totalDeivid += aporteDeivid;
+                }
 
-                let saldoAcumulado = (totalDeivid - totalRonei) / 2.0;
+                saldoAcumulado = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0)) + ((totalDeivid - totalRonei) / 2.0);
 
                 let corTexto = saldoAcumulado > 0 ? 'text-emerald-700 font-bold' : (saldoAcumulado < 0 ? 'text-red-700 font-bold' : 'text-slate-700');
                 let sinalTexto = saldoAcumulado > 0 ? '🟢 + ' : (saldoAcumulado < 0 ? '🔴 - ' : '');
 
                 const tr = document.createElement('tr');
-                tr.className = 'border-b border-slate-200 hover:bg-slate-50';
+                tr.className = `border-b border-slate-200 hover:bg-slate-50 ${item.pendente ? 'bg-amber-50/60' : ''}`;
                 tr.innerHTML = `
                     <td class="p-1.5 text-center font-mono text-slate-500">[${index + 1}]</td>
                     <td class="p-1.5 text-center whitespace-nowrap">${formatarData(item.data)}</td>
                     <td class="p-1.5 font-medium text-slate-800">
-                        <div>${item.descricao}</div>
+                        <div class="flex items-center gap-1">
+                            ${item.pendente ? '<span class="bg-amber-200 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded">🟡 PENDENTE</span>' : ''}
+                            <span>${item.descricao}</span>
+                        </div>
                         <div class="text-[10px] text-slate-400 font-normal">🏷️ ${item.centroCusto || 'Geral'} | ${item.categoria || 'Outros'}</div>
                     </td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei > 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
@@ -253,12 +413,14 @@
             document.getElementById('resumo-ronei').innerText = `R$ ${totalRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             document.getElementById('resumo-deivid').innerText = `R$ ${totalDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             
-            const diferencaBruta = totalDeivid - totalRonei;
-            const resumoDiferencaElem = document.getElementById('resumo-diferenca');
-            resumoDiferencaElem.innerText = `${diferencaBruta >= 0 ? '' : '- '}R$ ${Math.abs(diferencaBruta).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            resumoDiferencaElem.className = `p-2 text-right font-mono font-bold ${diferencaBruta < 0 ? 'text-red-700' : 'text-emerald-700'}`;
+            const saldoIniElem = document.getElementById('resumo-saldo-inicial');
+            if (saldoInicialObj.valor > 0) {
+                saldoIniElem.innerText = `R$ ${saldoInicialObj.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${saldoInicialObj.credor} a receber)`;
+            } else {
+                saldoIniElem.innerText = 'R$ 0,00 (Zerado)';
+            }
 
-            const posicaoLiquida = (totalDeivid - totalRonei) / 2.0;
+            const posicaoLiquida = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0)) + ((totalDeivid - totalRonei) / 2.0);
             const resumoPosicaoElem = document.getElementById('resumo-posicao');
 
             if (posicaoLiquida > 0) {
@@ -271,7 +433,7 @@
                 resumoPosicaoElem.innerText = 'SALDOS ZERADOS / QUITADOS';
                 resumoPosicaoElem.className = 'p-2 text-right font-bold text-slate-700';
             }
-        }
+        };
 
         function formatarData(dataStr) {
             if(!dataStr) return '';
@@ -285,6 +447,7 @@
             document.getElementById('filtro-pagador').value = '';
             document.getElementById('filtro-categoria').value = '';
             document.getElementById('filtro-cc').value = '';
+            document.getElementById('filtro-status').value = '';
             atualizarTela();
         };
 
@@ -297,7 +460,6 @@
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; }
         
-        /* REGRAS ESPECÍFICAS PARA ENQUADRAR IMPRESSÃO / PDF A4 */
         @media print {
             .no-print { display: none !important; }
             html, body { 
@@ -356,9 +518,14 @@
         <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 no-print">
             <div class="flex justify-between items-center mb-3">
                 <h2 class="text-sm font-bold text-slate-700">➕ Lançamento / Edição</h2>
-                <button type="button" onclick="adicionarCentroCusto()" class="text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg border border-emerald-300">
-                    ⚙️ + Criar Centro de Custo
-                </button>
+                <div class="flex gap-2">
+                    <button type="button" onclick="configurarSaldoInicial()" class="text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg border border-amber-300">
+                        ⚙️ Saldo Inicial
+                    </button>
+                    <button type="button" onclick="adicionarCentroCusto()" class="text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg border border-emerald-300">
+                        ⚙️ + Centro de Custo
+                    </button>
+                </div>
             </div>
 
             <form id="form-lancamento" class="space-y-3">
@@ -382,6 +549,7 @@
                             <option value="Infraestrutura">Infraestrutura</option>
                             <option value="Frete / Logística">Frete / Logística</option>
                             <option value="Compra de Gado">Compra de Gado</option>
+                            <option value="Transferência entre Sócios">💸 Transferência entre Sócios</option>
                             <option value="Impostos / Taxas">Impostos / Taxas</option>
                             <option value="Outros">Outros</option>
                         </select>
@@ -398,7 +566,7 @@
                         <input type="date" id="data" required class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-emerald-800">Quem Pagou?</label>
+                        <label class="block text-xs font-bold text-emerald-800">Quem Pagou / Enviou?</label>
                         <select id="socio-pagador" class="w-full mt-1 p-2 border border-emerald-600 rounded-lg text-sm bg-emerald-50 font-bold text-slate-800">
                             <option value="Deivid">Deivid</option>
                             <option value="Ronei">Ronei</option>
@@ -407,6 +575,19 @@
                     <div>
                         <label class="block text-xs font-medium text-slate-600">Anexo (PDF ou Foto)</label>
                         <input type="file" id="anexo-pdf" accept="application/pdf,image/*" class="w-full mt-1 text-xs border border-slate-300 rounded-lg p-1.5 bg-white">
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-800">
+                        <input type="checkbox" id="is-pendente" class="rounded text-amber-600 focus:ring-amber-500">
+                        🟡 Salvar como Pendente / Rascunho (Finalizar depois)
+                    </label>
+
+                    <div id="container-remover-anexo" class="hidden">
+                        <button type="button" onclick="removerAnexoExistente()" class="text-xs text-red-600 hover:underline font-semibold">
+                            🗑️ Remover Anexo Atual
+                        </button>
                     </div>
                 </div>
 
@@ -428,14 +609,14 @@
                 <button onclick="limparFiltros()" class="text-[11px] text-emerald-700 font-semibold hover:underline">Limpar Filtros</button>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
                 <div>
                     <label class="block text-[10px] text-slate-500">Data Inicial</label>
-                    <input type="date" id="filtro-data-ini" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
+                    <input type="date" id="filtro-data-ini" onchange="atualizarTela()" oninput="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
                 </div>
                 <div>
                     <label class="block text-[10px] text-slate-500">Data Final</label>
-                    <input type="date" id="filtro-data-fim" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
+                    <input type="date" id="filtro-data-fim" onchange="atualizarTela()" oninput="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
                 </div>
                 <div>
                     <label class="block text-[10px] text-slate-500">Quem Pagou?</label>
@@ -461,8 +642,17 @@
                         <option value="Infraestrutura">Infraestrutura</option>
                         <option value="Frete / Logística">Frete / Logística</option>
                         <option value="Compra de Gado">Compra de Gado</option>
+                        <option value="Transferência entre Sócios">Transferência entre Sócios</option>
                         <option value="Impostos / Taxas">Impostos / Taxas</option>
                         <option value="Outros">Outros</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] text-slate-500">Status</label>
+                    <select id="filtro-status" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                        <option value="">Todos</option>
+                        <option value="concluidos">Concluídos</option>
+                        <option value="pendentes">🟡 Pendentes</option>
                     </select>
                 </div>
             </div>
@@ -472,7 +662,10 @@
         <div class="flex justify-between items-center mb-3 no-print">
             <h2 class="text-sm font-bold text-slate-700">📋 Extrato em Nuvem</h2>
             <div class="flex gap-2">
-                <button onclick="gerarPDF()" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow">
+                <button onclick="exportarExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
+                    📊 Exportar para Excel (.xlsx)
+                </button>
+                <button onclick="gerarPDF()" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
                     🖨️ Imprimir / Gerar PDF
                 </button>
             </div>
@@ -508,16 +701,16 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200">
                     <tr>
+                        <td class="p-2">Saldo Inicial da Sociedade:</td>
+                        <td class="p-2 text-right font-mono font-bold text-slate-700" id="resumo-saldo-inicial">R$ 0,00</td>
+                    </tr>
+                    <tr>
                         <td class="p-2">Total Aportado por <b>RONEI</b>:</td>
                         <td class="p-2 text-right font-mono font-bold" id="resumo-ronei">R$ 0,00</td>
                     </tr>
                     <tr>
                         <td class="p-2">Total Aportado por <b>DEIVID</b>:</td>
                         <td class="p-2 text-right font-mono font-bold" id="resumo-deivid">R$ 0,00</td>
-                    </tr>
-                    <tr>
-                        <td class="p-2">Diferença Bruta de Aportes:</td>
-                        <td class="p-2 text-right font-mono font-bold" id="resumo-diferenca">R$ 0,00</td>
                     </tr>
                     <tr class="bg-slate-100 font-bold">
                         <td class="p-2">POSIÇÃO FINAL ATUALIZADA:</td>
