@@ -29,12 +29,53 @@
         const db = getFirestore(app);
         const colRef = collection(db, "lancamentos_dr");
         const colCcRef = collection(db, "centros_custo_dr");
+        const colSubRef = collection(db, "subcategorias_dr");
         const configDocRef = doc(db, "configuracoes_dr", "saldo_inicial");
 
         let lancamentos = [];
         let centrosCusto = ["Geral", "Arrendamento", "Nutrição / Ração", "Mão de Obra", "Infraestrutura", "Frete", "Compra de Gado", "Outros"];
         let editandoId = null;
         let saldoInicialObj = { valor: 0, credor: "Nenhum" };
+
+        // ESTRUTURA BASE DE CATEGORIAS (Conforme imagem)
+        const estruturaBase = {
+            "Custos Fixos": {
+                "Mão de Obra": ["Salários e Encargos", "Prêmios e Benefícios", "Rescisões e acertos"],
+                "Administração": ["Comunicação e Energia", "Deslocamento e Hospedagem", "Contabilidade, Jurídico e Consultoria", "Despesa financeira", "Casa-Sede", "Despesas gerais", "Água"],
+                "Impostos": ["Taxa e impostos sobre a venda", "Taxas e impostos sobre o Lucro", "Outras Taxas e Impostos"],
+                "Manutenção de Infraestrutura": ["Barracões", "Cercas", "Estradas e pontes", "Instalações pecuárias", "Instalações Residenciais", "Ferramentas e equipamentos", "Informática, telefonia e comunicações", "Móveis e Eletrodomésticos", "Rede Elétrica", "Rede Hidráulica", "Arrendamentos"],
+                "Parque de Máquinas": ["Combustível", "Manutenção", "Seguro, impostos e multas", "Outros"]
+            },
+            "Custos Variáveis": {
+                "Insumos de rebanho": ["Nutrição", "Reprodução", "Sanidade", "Identificação e Outros", "MS Confinamento"],
+                "Pastagem": ["Manutenção e Fertilização", "Confinamentos", "Aluguel Pasto"],
+                "Silo e forrageiras": ["Feno", "Silagem", "Pastagens Anuais"],
+                "Outras Despesas": ["Comissão de compra", "Comissão de Venda", "Frete"]
+            },
+            "Investimentos": {
+                "Investimentos": ["inv_Barracões", "inv_Cercas", "inv_Estradas e pontes", "inv_Instalações pecuárias", "inv_Instalações Residenciais", "inv_Ferramentas e equipamentos", "inv_Informática, telefonia e comunicações", "inv_Móveis e Eletrodomésticos", "inv_Rede Elétrica", "inv_Rede Hidráulica", "inv_Aquisição de Outros Animais", "inv_Contas a Pagar", "inv_Aquisição Bovinos"]
+            },
+            "Financeiro e Sócios": {
+                "Acerto entre Sócios": ["Transferência entre Sócios"]
+            }
+        };
+
+        let estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase));
+
+        // CARREGAR SUBCATEGORIAS PERSONALIZADAS
+        onSnapshot(colSubRef, (snapshot) => {
+            estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase)); // Reseta para a base
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (estruturaDinamica[data.tipo] && estruturaDinamica[data.tipo][data.categoria]) {
+                    if (!estruturaDinamica[data.tipo][data.categoria].includes(data.subcategoria)) {
+                        estruturaDinamica[data.tipo][data.categoria].push(data.subcategoria);
+                    }
+                }
+            });
+            window.popularTipos('tipo-custo');
+            window.popularTipos('filtro-tipo');
+        });
 
         // CARREGAR SALDO INICIAL
         onSnapshot(configDocRef, (docSnap) => {
@@ -78,6 +119,80 @@
             });
         }
 
+        // LÓGICA DE CASCATA PARA SELECTS
+        window.popularTipos = function(selectId) {
+            const sel = document.getElementById(selectId);
+            const valAnterior = sel.value;
+            sel.innerHTML = '<option value="">Selecione...</option>';
+            Object.keys(estruturaDinamica).forEach(tipo => {
+                sel.innerHTML += `<option value="${tipo}">${tipo}</option>`;
+            });
+            if (valAnterior && estruturaDinamica[valAnterior]) sel.value = valAnterior;
+        };
+
+        window.popularCategorias = function(tipoId, catId) {
+            const tipoSel = document.getElementById(tipoId);
+            const catSel = document.getElementById(catId);
+            const valAnterior = catSel.value;
+            catSel.innerHTML = '<option value="">Selecione...</option>';
+            
+            if (tipoSel.value && estruturaDinamica[tipoSel.value]) {
+                Object.keys(estruturaDinamica[tipoSel.value]).forEach(cat => {
+                    catSel.innerHTML += `<option value="${cat}">${cat}</option>`;
+                });
+            }
+            if (valAnterior && estruturaDinamica[tipoSel.value] && estruturaDinamica[tipoSel.value][valAnterior]) {
+                catSel.value = valAnterior;
+            }
+            
+            const subId = catId.replace('categoria', 'subcategoria');
+            if(document.getElementById(subId)) {
+                window.popularSubcategorias(tipoId, catId, subId);
+            }
+        };
+
+        window.popularSubcategorias = function(tipoId, catId, subId) {
+            const tipo = document.getElementById(tipoId).value;
+            const cat = document.getElementById(catId).value;
+            const subSel = document.getElementById(subId);
+            const valAnterior = subSel.value;
+            subSel.innerHTML = '<option value="">Selecione...</option>';
+
+            if (tipo && cat && estruturaDinamica[tipo][cat]) {
+                estruturaDinamica[tipo][cat].forEach(sub => {
+                    subSel.innerHTML += `<option value="${sub}">${sub}</option>`;
+                });
+            }
+            if (valAnterior && Array.from(subSel.options).some(opt => opt.value === valAnterior)) {
+                subSel.value = valAnterior;
+            }
+        };
+
+        // ADICIONAR NOVA SUBCATEGORIA
+        window.adicionarSubcategoria = async function() {
+            const tipo = document.getElementById('tipo-custo').value;
+            const categoria = document.getElementById('categoria').value;
+
+            if (!tipo || !categoria) {
+                alert("Selecione primeiro o Tipo de Custo e a Categoria.");
+                return;
+            }
+
+            const novaSub = prompt(`Digite a nova subcategoria para "${categoria}":`);
+            if (novaSub && novaSub.trim() !== "") {
+                try {
+                    await addDoc(colSubRef, {
+                        tipo: tipo,
+                        categoria: categoria,
+                        subcategoria: novaSub.trim()
+                    });
+                    alert("Subcategoria criada com sucesso.");
+                } catch (e) {
+                    alert("Erro ao cadastrar subcategoria.");
+                }
+            }
+        };
+
         // SALVAR OU EDITAR LANÇAMENTO
         document.getElementById('form-lancamento').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -89,8 +204,10 @@
             const descricao = document.getElementById('descricao').value;
             const valor = parseFloat(document.getElementById('valor').value) || 0;
             const data = document.getElementById('data').value;
-            const categoria = document.getElementById('categoria').value;
             const centroCusto = document.getElementById('centro-custo').value;
+            const tipoCusto = document.getElementById('tipo-custo').value;
+            const categoria = document.getElementById('categoria').value;
+            const subcategoria = document.getElementById('subcategoria').value;
             const socio = document.getElementById('socio-pagador').value;
             const isPendente = document.getElementById('is-pendente').checked;
             const fileInput = document.getElementById('anexo-pdf');
@@ -103,32 +220,14 @@
             try {
                 if (editandoId) {
                     const updateObj = { 
-                        descricao, 
-                        valor, 
-                        data, 
-                        categoria, 
-                        centroCusto, 
-                        socio,
-                        pendente: isPendente
+                        descricao, valor, data, centroCusto, tipoCusto, categoria, subcategoria, socio, pendente: isPendente
                     };
-                    
-                    if (anexoData) {
-                        updateObj.anexoData = anexoData;
-                    }
-
+                    if (anexoData) updateObj.anexoData = anexoData;
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), updateObj);
                     cancelarEdicao();
                 } else {
                     await addDoc(colRef, {
-                        descricao,
-                        valor,
-                        data,
-                        categoria,
-                        centroCusto: centroCusto || "Geral",
-                        socio,
-                        pendente: isPendente,
-                        anexoData: anexoData || null,
-                        criadoEm: new Date().toISOString()
+                        descricao, valor, data, centroCusto: centroCusto || "Geral", tipoCusto, categoria, subcategoria, socio, pendente: isPendente, anexoData: anexoData || null, criadoEm: new Date().toISOString()
                     });
                     limparFormulario();
                 }
@@ -154,10 +253,16 @@
             const dadosExcel = lancamentos.map((item, index) => {
                 let aporteRonei = 0;
                 let aporteDeivid = 0;
+                const isTransferencia = item.categoria === 'Transferência entre Sócios' || item.subcategoria === 'Transferência entre Sócios';
 
-                if (item.categoria === 'Transferência entre Sócios') {
-                    if (item.socio === 'Ronei') totalRonei += item.valor * 2;
-                    else if (item.socio === 'Deivid') totalDeivid += item.valor * 2;
+                if (isTransferencia) {
+                    if (item.socio === 'Ronei') {
+                        aporteRonei = item.valor;
+                        totalRonei += item.valor * 2;
+                    } else if (item.socio === 'Deivid') {
+                        aporteDeivid = item.valor;
+                        totalDeivid += item.valor * 2;
+                    }
                 } else {
                     aporteRonei = (item.socio === 'Ronei') ? item.valor : 0;
                     aporteDeivid = (item.socio === 'Deivid') ? item.valor : 0;
@@ -172,7 +277,9 @@
                     "Data": formatarData(item.data),
                     "Descrição": item.descricao,
                     "Centro de Custo": item.centroCusto || 'Geral',
+                    "Tipo de Custo": item.tipoCusto || '',
                     "Categoria": item.categoria || 'Outros',
+                    "Subcategoria": item.subcategoria || '',
                     "Sócio Pagador": item.socio,
                     "Status": item.pendente ? "Pendente" : "Concluído",
                     "Ronei (R$)": aporteRonei,
@@ -219,10 +326,16 @@
             document.getElementById('descricao').value = item.descricao;
             document.getElementById('valor').value = item.valor;
             document.getElementById('data').value = item.data;
-            document.getElementById('categoria').value = item.categoria || 'Outros';
             document.getElementById('centro-custo').value = item.centroCusto || 'Geral';
             document.getElementById('socio-pagador').value = item.socio;
             document.getElementById('is-pendente').checked = !!item.pendente;
+
+            // Cascata reversa
+            document.getElementById('tipo-custo').value = item.tipoCusto || '';
+            window.popularCategorias('tipo-custo', 'categoria');
+            document.getElementById('categoria').value = item.categoria || '';
+            window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria');
+            document.getElementById('subcategoria').value = item.subcategoria || '';
 
             if (item.anexoData) {
                 document.getElementById('container-remover-anexo').classList.remove('hidden');
@@ -263,6 +376,9 @@
             document.getElementById('valor').value = '';
             document.getElementById('anexo-pdf').value = '';
             document.getElementById('is-pendente').checked = false;
+            document.getElementById('tipo-custo').value = '';
+            window.popularCategorias('tipo-custo', 'categoria');
+            window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria');
         }
 
         // EXCLUIR ITEM
@@ -343,6 +459,7 @@
             const filtroDataIni = document.getElementById('filtro-data-ini').value;
             const filtroDataFim = document.getElementById('filtro-data-fim').value;
             const filtroPagador = document.getElementById('filtro-pagador').value;
+            const filtroTipo = document.getElementById('filtro-tipo').value;
             const filtroCategoria = document.getElementById('filtro-categoria').value;
             const filtroCC = document.getElementById('filtro-cc').value;
             const filtroStatus = document.getElementById('filtro-status').value;
@@ -351,6 +468,7 @@
                 if (filtroDataIni && item.data < filtroDataIni) return false;
                 if (filtroDataFim && item.data > filtroDataFim) return false;
                 if (filtroPagador && item.socio !== filtroPagador) return false;
+                if (filtroTipo && item.tipoCusto !== filtroTipo) return false;
                 if (filtroCategoria && item.categoria !== filtroCategoria) return false;
                 if (filtroCC && (item.centroCusto || 'Geral') !== filtroCC) return false;
                 if (filtroStatus === 'pendentes' && !item.pendente) return false;
@@ -373,10 +491,15 @@
                 let aporteRonei = 0;
                 let aporteDeivid = 0;
 
-                if (item.categoria === 'Transferência entre Sócios') {
+                const isTransferencia = item.categoria === 'Transferência entre Sócios' || item.subcategoria === 'Transferência entre Sócios';
+
+                if (isTransferencia) {
+                    // Correção: Agora o valor do Aporte é atribuído à coluna visual corretamente
                     if (item.socio === 'Ronei') {
+                        aporteRonei = item.valor;
                         totalRonei += item.valor * 2;
                     } else if (item.socio === 'Deivid') {
+                        aporteDeivid = item.valor;
                         totalDeivid += item.valor * 2;
                     }
                 } else {
@@ -390,6 +513,13 @@
 
                 let corTexto = saldoAcumulado > 0 ? 'text-emerald-700 font-bold' : (saldoAcumulado < 0 ? 'text-red-700 font-bold' : 'text-slate-700');
 
+                let classificacaoFormatada = '';
+                if (item.tipoCusto && item.subcategoria) {
+                    classificacaoFormatada = `[${item.tipoCusto}] ${item.categoria} > ${item.subcategoria}`;
+                } else {
+                    classificacaoFormatada = `[Antigo] ${item.categoria || 'Outros'}`;
+                }
+
                 const tr = document.createElement('tr');
                 tr.className = `border-b border-slate-200 hover:bg-slate-50 ${item.pendente ? 'bg-amber-50/60' : ''}`;
                 tr.innerHTML = `
@@ -400,7 +530,7 @@
                             ${item.pendente ? '<span class="bg-amber-200 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded">PENDENTE</span>' : ''}
                             <span>${item.descricao}</span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-normal">[${item.centroCusto || 'Geral'}] ${item.categoria || 'Outros'}</div>
+                        <div class="text-[10px] text-slate-500 font-normal">🏷️ ${item.centroCusto || 'Geral'} | ${classificacaoFormatada}</div>
                     </td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei > 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid > 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
@@ -451,6 +581,8 @@
             document.getElementById('filtro-data-ini').value = '';
             document.getElementById('filtro-data-fim').value = '';
             document.getElementById('filtro-pagador').value = '';
+            document.getElementById('filtro-tipo').value = '';
+            window.popularCategorias('filtro-tipo', 'filtro-categoria');
             document.getElementById('filtro-categoria').value = '';
             document.getElementById('filtro-cc').value = '';
             document.getElementById('filtro-status').value = '';
@@ -459,8 +591,17 @@
 
         window.gerarPDF = function() { window.print(); };
 
-        document.getElementById('data').valueAsDate = new Date();
-        document.getElementById('data-extrato').innerText = new Date().toLocaleDateString('pt-BR');
+        window.onload = () => {
+            const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+            const dataLocal = new Date(Date.now() - tzOffset).toISOString().split('T')[0];
+            document.getElementById('data').value = dataLocal;
+            
+            document.getElementById('data-extrato').innerText = new Date(Date.now() - tzOffset).toLocaleDateString('pt-BR');
+            
+            // Iniciar com categorias preenchidas
+            window.popularTipos('tipo-custo');
+            window.popularTipos('filtro-tipo');
+        };
     </script>
 
     <style>
@@ -506,7 +647,7 @@
 </head>
 <body class="bg-slate-100 min-h-screen p-2 md:p-6">
 
-    <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-3 md:p-6 print-container">
+    <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-3 md:p-6 print-container">
         
         <!-- CABEÇALHO DA PÁGINA -->
         <div class="border-b-2 border-emerald-800 pb-2 mb-3 flex justify-between items-end">
@@ -522,85 +663,97 @@
 
         <!-- FORMULÁRIO DE LANÇAMENTO -->
         <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 no-print">
-            <div class="flex justify-between items-center mb-3">
+            <div class="flex justify-between items-center mb-4">
                 <h2 class="text-sm font-bold text-slate-700 uppercase">Lançamento / Edição</h2>
                 <div class="flex gap-2">
                     <button type="button" onclick="configurarSaldoInicial()" class="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded border border-amber-300 uppercase transition">
                         Saldo Inicial
                     </button>
                     <button type="button" onclick="adicionarCentroCusto()" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded border border-emerald-300 uppercase transition">
-                        Adicionar Centro de Custo
+                        Novo Centro de Custo
                     </button>
                 </div>
             </div>
 
-            <form id="form-lancamento" class="space-y-3">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <form id="form-lancamento" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="md:col-span-2">
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Descrição / Fornecedor</label>
-                        <input type="text" id="descricao" placeholder="Ex: Arrendamento Dinei" required class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Descrição / Fornecedor</label>
+                        <input type="text" id="descricao" placeholder="Ex: Arrendamento Dinei" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Centro de Custo</label>
-                        <select id="centro-custo" class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Categoria</label>
-                        <select id="categoria" class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                            <option value="Arrendamento">Arrendamento</option>
-                            <option value="Nutrição / Ração">Nutrição / Ração</option>
-                            <option value="Mão de Obra">Mão de Obra</option>
-                            <option value="Infraestrutura">Infraestrutura</option>
-                            <option value="Frete / Logística">Frete / Logística</option>
-                            <option value="Compra de Gado">Compra de Gado</option>
-                            <option value="Transferência entre Sócios">Transferência entre Sócios</option>
-                            <option value="Impostos / Taxas">Impostos / Taxas</option>
-                            <option value="Outros">Outros</option>
+                    <div class="md:col-span-2">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Centro de Custo</label>
+                        <select id="centro-custo" class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                         </select>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
+                    <div class="md:col-span-1">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Tipo de Custo</label>
+                        <select id="tipo-custo" onchange="window.popularCategorias('tipo-custo', 'categoria')" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                            <!-- Preenchido via JS -->
+                        </select>
+                    </div>
+                    <div class="md:col-span-1">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Categoria</label>
+                        <select id="categoria" onchange="window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria')" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                            <option value="">Selecione...</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Subcategoria</label>
+                        <div class="flex mt-1 gap-2">
+                            <select id="subcategoria" required class="w-full p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <button type="button" onclick="adicionarSubcategoria()" title="Adicionar Subcategoria nesta Categoria" class="px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-md uppercase text-[10px] transition">
+                                Adicionar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Valor (R$)</label>
-                        <input type="number" step="0.01" id="valor" placeholder="0.00" required class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <label class="block text-[11px] font-bold text-emerald-800 uppercase">Valor (R$)</label>
+                        <input type="number" step="0.01" id="valor" placeholder="0.00" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Data do Pagamento</label>
-                        <input type="date" id="data" required class="w-full mt-1 p-2 border rounded-lg text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Data do Pagamento</label>
+                        <input type="date" id="data" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-emerald-800 uppercase">Quem Pagou / Enviou?</label>
-                        <select id="socio-pagador" class="w-full mt-1 p-2 border border-emerald-600 rounded-lg text-sm bg-emerald-50 font-bold text-slate-800 focus:border-emerald-700 outline-none transition">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Quem Pagou / Enviou?</label>
+                        <select id="socio-pagador" class="w-full mt-1 p-2 border border-slate-300 rounded-md text-sm bg-white font-bold text-slate-800 focus:border-emerald-500 outline-none transition">
                             <option value="Deivid">Deivid</option>
                             <option value="Ronei">Ronei</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase">Anexo (PDF ou Foto)</label>
-                        <input type="file" id="anexo-pdf" accept="application/pdf,image/*" class="w-full mt-1 text-xs border border-slate-300 rounded-lg p-1.5 bg-white">
+                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Anexo (PDF ou Foto)</label>
+                        <input type="file" id="anexo-pdf" accept="application/pdf,image/*" class="w-full mt-1 text-xs border border-slate-300 rounded-md p-1.5 bg-white">
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200">
-                    <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-800 uppercase">
+                <div class="flex justify-between items-center bg-slate-100 p-2.5 rounded-lg border border-slate-200 mt-4">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-800 uppercase tracking-wide">
                         <input type="checkbox" id="is-pendente" class="rounded text-amber-600 focus:ring-amber-500">
                         Salvar como Pendente
                     </label>
 
                     <div id="container-remover-anexo" class="hidden">
-                        <button type="button" onclick="removerAnexoExistente()" class="text-xs text-red-600 hover:underline font-bold uppercase">
+                        <button type="button" onclick="removerAnexoExistente()" class="text-xs text-red-600 hover:underline font-bold uppercase tracking-wide">
                             Remover Anexo Atual
                         </button>
                     </div>
                 </div>
 
-                <div class="flex gap-2">
-                    <button type="submit" id="btn-submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-sm transition shadow uppercase tracking-wide">
+                <div class="flex gap-2 pt-2">
+                    <button type="submit" id="btn-submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 rounded-lg text-sm transition shadow uppercase tracking-wider">
                         Salvar no Banco de Dados
                     </button>
-                    <button type="button" id="btn-cancelar-edicao" onclick="cancelarEdicao()" class="hidden bg-slate-500 hover:bg-slate-600 text-white font-bold px-4 py-2.5 rounded-lg text-sm uppercase transition tracking-wide">
+                    <button type="button" id="btn-cancelar-edicao" onclick="cancelarEdicao()" class="hidden bg-slate-500 hover:bg-slate-600 text-white font-bold px-6 py-3 rounded-lg text-sm uppercase transition tracking-wider shadow">
                         Cancelar
                     </button>
                 </div>
@@ -609,12 +762,12 @@
 
         <!-- FILTROS DE CONSULTA -->
         <div class="mb-4 p-3 bg-slate-100 rounded-xl border border-slate-200 no-print">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-xs font-bold text-slate-700 uppercase">Filtros de Consulta</span>
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-xs font-bold text-slate-700 uppercase tracking-wide">Filtros de Consulta</span>
                 <button onclick="limparFiltros()" class="text-[10px] text-emerald-700 font-bold uppercase hover:underline">Limpar Filtros</button>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+            <div class="grid grid-cols-2 md:grid-cols-7 gap-2 text-xs">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase">Data Inicial</label>
                     <input type="date" id="filtro-data-ini" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
@@ -637,18 +790,15 @@
                     </select>
                 </div>
                 <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Tipo</label>
+                    <select id="filtro-tipo" onchange="window.popularCategorias('filtro-tipo', 'filtro-categoria'); atualizarTela();" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase">Categoria</label>
                     <select id="filtro-categoria" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
                         <option value="">Todas</option>
-                        <option value="Arrendamento">Arrendamento</option>
-                        <option value="Nutrição / Ração">Nutrição / Ração</option>
-                        <option value="Mão de Obra">Mão de Obra</option>
-                        <option value="Infraestrutura">Infraestrutura</option>
-                        <option value="Frete / Logística">Frete / Logística</option>
-                        <option value="Compra de Gado">Compra de Gado</option>
-                        <option value="Transferência entre Sócios">Transferência entre Sócios</option>
-                        <option value="Impostos / Taxas">Impostos / Taxas</option>
-                        <option value="Outros">Outros</option>
                     </select>
                 </div>
                 <div>
@@ -664,29 +814,29 @@
 
         <!-- CONTROLES -->
         <div class="flex justify-between items-center mb-3 no-print">
-            <h2 class="text-sm font-bold text-slate-700 uppercase">Extrato em Nuvem</h2>
+            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wide">Extrato em Nuvem</h2>
             <div class="flex gap-2">
-                <button onclick="exportarExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] uppercase transition shadow">
+                <button onclick="exportarExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2 rounded-lg text-[11px] uppercase transition shadow tracking-wide">
                     Exportar Excel (.xlsx)
                 </button>
-                <button onclick="gerarPDF()" class="bg-slate-700 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] uppercase transition shadow">
+                <button onclick="gerarPDF()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-lg text-[11px] uppercase transition shadow tracking-wide">
                     Imprimir PDF
                 </button>
             </div>
         </div>
 
         <!-- TABELA DE LANÇAMENTOS -->
-        <div class="overflow-x-auto mb-4">
-            <table class="data-table w-full text-xs border-collapse border border-slate-300">
+        <div class="overflow-x-auto mb-4 border border-slate-300 rounded">
+            <table class="data-table w-full text-xs border-collapse">
                 <thead>
                     <tr class="bg-emerald-800 text-white text-center font-bold">
-                        <th class="p-2 border border-emerald-800 w-[5%]">Nº</th>
-                        <th class="p-2 border border-emerald-800 w-[12%]">DATA</th>
-                        <th class="p-2 border border-emerald-800 text-left w-[33%]">DESCRIÇÃO / DETALHES</th>
-                        <th class="p-2 border border-emerald-800 text-right w-[14%]">RONEI</th>
-                        <th class="p-2 border border-emerald-800 text-right w-[14%]">DEIVID</th>
-                        <th class="p-2 border border-emerald-800 text-right w-[15%]">SALDO ACUMULADO</th>
-                        <th class="p-2 border border-emerald-800 w-[7%] no-print">AÇÕES</th>
+                        <th class="p-2 border-b border-r border-emerald-900 w-[5%]">Nº</th>
+                        <th class="p-2 border-b border-r border-emerald-900 w-[10%]">DATA</th>
+                        <th class="p-2 border-b border-r border-emerald-900 text-left w-[36%]">DESCRIÇÃO / DETALHES CLASSIFICAÇÃO</th>
+                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[13%]">RONEI</th>
+                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[13%]">DEIVID</th>
+                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[15%]">SALDO ACUMULADO</th>
+                        <th class="p-2 border-b border-emerald-900 w-[8%] no-print">AÇÕES</th>
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
@@ -705,20 +855,20 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200">
                     <tr>
-                        <td class="p-2 text-slate-700 font-bold uppercase bg-slate-50">Saldo Inicial da Sociedade:</td>
-                        <td class="p-2 text-right font-mono font-bold text-slate-800 bg-slate-50" id="resumo-saldo-inicial">R$ 0,00</td>
+                        <td class="p-2.5 text-slate-700 font-bold uppercase bg-slate-50">Saldo Inicial da Sociedade:</td>
+                        <td class="p-2.5 text-right font-mono font-bold text-slate-800 bg-slate-50" id="resumo-saldo-inicial">R$ 0,00</td>
                     </tr>
                     <tr>
-                        <td class="p-2 text-slate-700 font-bold uppercase">Total Aportado por RONEI:</td>
-                        <td class="p-2 text-right font-mono font-bold text-slate-800" id="resumo-ronei">R$ 0,00</td>
+                        <td class="p-2.5 text-slate-700 font-bold uppercase">Total Aportado por RONEI:</td>
+                        <td class="p-2.5 text-right font-mono font-bold text-slate-800" id="resumo-ronei">R$ 0,00</td>
                     </tr>
                     <tr>
-                        <td class="p-2 text-slate-700 font-bold uppercase">Total Aportado por DEIVID:</td>
-                        <td class="p-2 text-right font-mono font-bold text-slate-800" id="resumo-deivid">R$ 0,00</td>
+                        <td class="p-2.5 text-slate-700 font-bold uppercase">Total Aportado por DEIVID:</td>
+                        <td class="p-2.5 text-right font-mono font-bold text-slate-800" id="resumo-deivid">R$ 0,00</td>
                     </tr>
                     <tr class="bg-slate-100 border-t-2 border-slate-800">
-                        <td class="p-2 font-bold uppercase text-slate-800">POSIÇÃO FINAL ATUALIZADA:</td>
-                        <td class="p-2 text-right font-bold text-emerald-700" id="resumo-posicao">SALDOS ZERADOS</td>
+                        <td class="p-2.5 font-bold uppercase text-slate-800 tracking-wide">POSIÇÃO FINAL ATUALIZADA:</td>
+                        <td class="p-2.5 text-right font-bold text-emerald-700" id="resumo-posicao">SALDOS ZERADOS</td>
                     </tr>
                 </tbody>
             </table>
