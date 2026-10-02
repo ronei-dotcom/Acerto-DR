@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acerto DR - Gestão Financeira Pecuária</title>
+    <title>Acerto DR - Gestão Financeira</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Biblioteca para Gerar Excel (.xlsx) -->
@@ -14,7 +14,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, setDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // CHAVE DO FIREBASE (BANCO DE DADOS)
+        // CHAVE DO FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyDgnDHu-dHCo5oZRo113M5jQ1kxwX9_1uE",
             authDomain: "sociedade-dr.firebaseapp.com",
@@ -35,7 +35,6 @@
         let editandoId = null;
         let saldoInicialObj = { valor: 0, credor: "Nenhum" };
 
-        // ESTRUTURA BASE DE CATEGORIAS
         const estruturaBase = {
             "Custos Fixos": {
                 "Mão de Obra": ["Salários e Encargos", "Prêmios e Benefícios", "Rescisões e acertos"],
@@ -60,7 +59,6 @@
 
         let estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase));
 
-        // CARREGAR SUBCATEGORIAS PERSONALIZADAS
         onSnapshot(colSubRef, (snapshot) => {
             estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase)); 
             snapshot.forEach(doc => {
@@ -75,7 +73,6 @@
             window.popularTipos('filtro-tipo');
         });
 
-        // CARREGAR SALDO INICIAL
         onSnapshot(configDocRef, (docSnap) => {
             if (docSnap.exists()) {
                 saldoInicialObj = docSnap.data();
@@ -83,7 +80,6 @@
             atualizarTela();
         });
 
-        // ESCUTAR LANÇAMENTOS EM TEMPO REAL
         const q = query(colRef, orderBy("data", "asc"));
         onSnapshot(q, (snapshot) => {
             lancamentos = [];
@@ -96,7 +92,6 @@
             atualizarTela();
         });
 
-        // CONVERTER ARQUIVO PARA BASE64
         function fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 if (!file) resolve(null);
@@ -107,7 +102,6 @@
             });
         }
 
-        // LÓGICA DE CASCATA PARA SELECTS
         window.popularTipos = function(selectId) {
             const sel = document.getElementById(selectId);
             const valAnterior = sel.value;
@@ -156,7 +150,6 @@
             }
         };
 
-        // ADICIONAR NOVA SUBCATEGORIA
         window.adicionarSubcategoria = async function() {
             const tipo = document.getElementById('tipo-custo').value;
             const categoria = document.getElementById('categoria').value;
@@ -174,20 +167,18 @@
                         categoria: categoria,
                         subcategoria: novaSub.trim()
                     });
-                    alert("Subcategoria criada com sucesso.");
                 } catch (e) {
                     alert("Erro ao cadastrar subcategoria.");
                 }
             }
         };
 
-        // SALVAR OU EDITAR LANÇAMENTO
         document.getElementById('form-lancamento').addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const btnSubmit = document.getElementById('btn-submit');
             btnSubmit.disabled = true;
-            btnSubmit.innerText = "Salvando...";
+            btnSubmit.innerText = "Processando...";
 
             const descricao = document.getElementById('descricao').value;
             const valorRaw = document.getElementById('valor').value;
@@ -223,11 +214,10 @@
                 alert("Erro ao salvar no banco de dados: " + err.message);
             } finally {
                 btnSubmit.disabled = false;
-                btnSubmit.innerText = editandoId ? "Atualizar Lançamento" : "Salvar no Banco de Dados";
+                btnSubmit.innerText = editandoId ? "Atualizar Lançamento" : "Salvar Lançamento";
             }
         });
 
-        // EXPORTAR PARA EXCEL (.XLSX)
         window.exportarExcel = function() {
             if (lancamentos.length === 0) {
                 alert("Não há lançamentos para exportar.");
@@ -283,7 +273,6 @@
             XLSX.writeFile(workbook, `Extrato_Sociedade_DR_${dataAtual}.xlsx`);
         };
 
-        // DEFINIR SALDO INICIAL
         window.configurarSaldoInicial = async function() {
             const valStr = prompt("Digite o valor do Saldo Inicial acumulado (R$):", saldoInicialObj.valor || "0");
             if (valStr === null) return;
@@ -298,13 +287,11 @@
 
             try {
                 await setDoc(configDocRef, { valor: val, credor: credor });
-                alert("Saldo inicial atualizado com sucesso!");
             } catch(e) {
                 alert("Erro ao salvar saldo inicial.");
             }
         };
 
-        // PREPARAR EDICAO
         window.prepararEdicao = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item) return;
@@ -316,7 +303,6 @@
             document.getElementById('socio-pagador').value = item.socio;
             document.getElementById('is-pendente').checked = !!item.pendente;
 
-            // Cascata reversa
             document.getElementById('tipo-custo').value = item.tipoCusto || '';
             window.popularCategorias('tipo-custo', 'categoria');
             document.getElementById('categoria').value = item.categoria || '';
@@ -330,18 +316,17 @@
             }
 
             document.getElementById('btn-submit').innerText = "Atualizar Lançamento";
-            document.getElementById('btn-submit').className = "w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-lg text-sm transition shadow";
+            document.getElementById('btn-submit').className = "w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wide transition shadow-md";
             document.getElementById('btn-cancelar-edicao').classList.remove('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
         window.removerAnexoExistente = async function() {
             if (!editandoId) return;
-            if (confirm("Deseja remover o anexo/comprovante deste lançamento?")) {
+            if (confirm("Deseja remover o anexo deste lançamento?")) {
                 try {
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), { anexoData: null });
                     document.getElementById('container-remover-anexo').classList.add('hidden');
-                    alert("Anexo removido com sucesso!");
                 } catch(e) {
                     alert("Erro ao remover anexo.");
                 }
@@ -351,8 +336,8 @@
         window.cancelarEdicao = function() {
             editandoId = null;
             limparFormulario();
-            document.getElementById('btn-submit').innerText = "Salvar no Banco de Dados";
-            document.getElementById('btn-submit').className = "w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-sm transition shadow";
+            document.getElementById('btn-submit').innerText = "Salvar Lançamento";
+            document.getElementById('btn-submit').className = "w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wide transition shadow-md";
             document.getElementById('btn-cancelar-edicao').classList.add('hidden');
             document.getElementById('container-remover-anexo').classList.add('hidden');
         };
@@ -367,9 +352,8 @@
             window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria');
         }
 
-        // EXCLUIR ITEM
         window.apagarItem = async function(idDoc) {
-            if(confirm("Deseja excluir este lançamento permanentemente?")) {
+            if(confirm("Deseja excluir permanentemente?")) {
                 try {
                     await deleteDoc(doc(db, "lancamentos_dr", idDoc));
                 } catch(err) {
@@ -378,7 +362,6 @@
             }
         };
 
-        // VISUALIZAR ANEXO
         window.abrirAnexo = function(idDoc) {
             const item = lancamentos.find(l => l.idDoc === idDoc);
             if (!item || !item.anexoData) return;
@@ -394,17 +377,13 @@
                 }
                 const blob = new Blob([u8arr], { type: mime });
                 const blobUrl = URL.createObjectURL(blob);
-
                 const newWindow = window.open(blobUrl, '_blank');
-                if (!newWindow) {
-                    window.location.href = blobUrl;
-                }
+                if (!newWindow) window.location.href = blobUrl;
             } catch (e) {
                 window.open(item.anexoData, '_blank');
             }
         };
 
-        // FUNÇÃO DE ATUALIZAR TELA E FILTRAR
         window.atualizarTela = function() {
             const corpoTabela = document.getElementById('tabela-corpo');
             if(!corpoTabela) return;
@@ -432,7 +411,7 @@
             let totalDeivid = 0;
 
             if (lancamentosFiltrados.length === 0) {
-                corpoTabela.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-slate-400">Nenhum lançamento encontrado.</td></tr>';
+                corpoTabela.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 font-medium">Nenhum lançamento encontrado.</td></tr>';
             }
 
             let saldoAcumulado = 0;
@@ -462,35 +441,34 @@
 
                 saldoAcumulado = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0)) + ((totalDeivid - totalRonei) / 2.0);
 
-                let corTexto = saldoAcumulado > 0 ? 'text-emerald-700 font-bold' : (saldoAcumulado < 0 ? 'text-red-700 font-bold' : 'text-slate-700');
+                let corTexto = saldoAcumulado > 0 ? 'text-emerald-700 font-bold' : (saldoAcumulado < 0 ? 'text-red-600 font-bold' : 'text-slate-700 font-semibold');
 
                 let classificacaoFormatada = '';
                 if (item.tipoCusto && item.subcategoria) {
-                    classificacaoFormatada = `[${item.tipoCusto}] ${item.categoria} > ${item.subcategoria}`;
+                    classificacaoFormatada = `<span class="text-slate-400">[${item.tipoCusto}]</span> <span class="text-slate-600 font-medium">${item.categoria}</span> <span class="text-slate-400 mx-1">></span> <span class="text-slate-500">${item.subcategoria}</span>`;
                 } else {
-                    classificacaoFormatada = `[Antigo] ${item.categoria || 'Outros'}`;
+                    classificacaoFormatada = `<span class="text-slate-500">${item.categoria || 'Outros'}</span>`;
                 }
 
                 const tr = document.createElement('tr');
-                tr.className = `border-b border-slate-200 hover:bg-slate-50 ${item.pendente ? 'bg-amber-50/60' : ''}`;
+                tr.className = `border-b border-slate-200 hover:bg-slate-50 transition-colors ${item.pendente ? 'bg-amber-50/40' : 'bg-white'}`;
                 tr.innerHTML = `
-                    <td class="p-1.5 text-center font-mono text-slate-500">[${index + 1}]</td>
-                    <td class="p-1.5 text-center whitespace-nowrap">${formatarData(item.data)}</td>
-                    <td class="p-1.5 font-medium text-slate-800">
-                        <div class="flex items-center gap-1">
-                            ${item.pendente ? '<span class="bg-amber-200 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded">PENDENTE</span>' : ''}
-                            <span>${item.descricao}</span>
+                    <td class="px-4 py-3 text-center font-mono text-slate-400 text-[11px]">${formatarData(item.data)}</td>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 mb-0.5">
+                            ${item.pendente ? '<span class="bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Pendente</span>' : ''}
+                            <span class="font-bold text-slate-800">${item.descricao}</span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-normal">${classificacaoFormatada}</div>
+                        <div class="text-[11px]">${classificacaoFormatada}</div>
                     </td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei !== 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid !== 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap ${corTexto}">R$ ${Math.abs(saldoAcumulado).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="p-1.5 text-center no-print whitespace-nowrap">
-                        <div class="flex items-center justify-center gap-2">
-                            ${item.anexoData ? `<button onclick="abrirAnexo('${item.idDoc}')" title="Ver Anexo/PDF" class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase">Anexo</button>` : ''}
-                            <button onclick="prepararEdicao('${item.idDoc}')" title="Editar" class="text-amber-600 hover:text-amber-800 text-[10px] font-bold uppercase">Editar</button>
-                            <button onclick="apagarItem('${item.idDoc}')" title="Excluir" class="text-red-500 hover:text-red-700 text-[10px] font-bold uppercase">Excluir</button>
+                    <td class="px-4 py-3 text-right font-mono font-medium ${aporteRonei !== 0 ? 'text-slate-800' : 'text-slate-400'}">${aporteRonei !== 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-'}</td>
+                    <td class="px-4 py-3 text-right font-mono font-medium ${aporteDeivid !== 0 ? 'text-slate-800' : 'text-slate-400'}">${aporteDeivid !== 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-'}</td>
+                    <td class="px-4 py-3 text-right font-mono ${corTexto}">R$ ${Math.abs(saldoAcumulado).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="px-4 py-3 text-center no-print">
+                        <div class="flex items-center justify-center gap-3">
+                            ${item.anexoData ? `<button onclick="abrirAnexo('${item.idDoc}')" class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase tracking-wide transition-colors">Anexo</button>` : ''}
+                            <button onclick="prepararEdicao('${item.idDoc}')" class="text-slate-500 hover:text-slate-800 text-[10px] font-bold uppercase tracking-wide transition-colors">Editar</button>
+                            <button onclick="apagarItem('${item.idDoc}')" class="text-red-400 hover:text-red-600 text-[10px] font-bold uppercase tracking-wide transition-colors">Excluir</button>
                         </div>
                     </td>
                 `;
@@ -502,23 +480,23 @@
             
             const saldoIniElem = document.getElementById('resumo-saldo-inicial');
             if (saldoInicialObj.valor > 0) {
-                saldoIniElem.innerText = `R$ ${saldoInicialObj.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${saldoInicialObj.credor} a receber)`;
+                saldoIniElem.innerText = `R$ ${saldoInicialObj.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (${saldoInicialObj.credor})`;
             } else {
-                saldoIniElem.innerText = 'R$ 0,00 (Zerado)';
+                saldoIniElem.innerText = 'R$ 0,00';
             }
 
             const posicaoLiquida = (saldoInicialObj.credor === 'Deivid' ? saldoInicialObj.valor : (saldoInicialObj.credor === 'Ronei' ? -saldoInicialObj.valor : 0)) + ((totalDeivid - totalRonei) / 2.0);
             const resumoPosicaoElem = document.getElementById('resumo-posicao');
 
             if (posicaoLiquida > 0) {
-                resumoPosicaoElem.innerText = `DEIVID TEM A RECEBER R$ ${posicaoLiquida.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} DE RONEI`;
-                resumoPosicaoElem.className = 'p-2 text-right font-bold text-emerald-700';
+                resumoPosicaoElem.innerText = `DEIVID RECEBE R$ ${posicaoLiquida.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} DE RONEI`;
+                resumoPosicaoElem.className = 'p-3 text-right font-bold text-emerald-700 bg-emerald-50';
             } else if (posicaoLiquida < 0) {
                 resumoPosicaoElem.innerText = `DEIVID DEVE R$ ${Math.abs(posicaoLiquida).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} PARA RONEI`;
-                resumoPosicaoElem.className = 'p-2 text-right font-bold text-red-700';
+                resumoPosicaoElem.className = 'p-3 text-right font-bold text-red-700 bg-red-50';
             } else {
-                resumoPosicaoElem.innerText = 'SALDOS ZERADOS / QUITADOS';
-                resumoPosicaoElem.className = 'p-2 text-right font-bold text-slate-700';
+                resumoPosicaoElem.innerText = 'SALDOS ZERADOS';
+                resumoPosicaoElem.className = 'p-3 text-right font-bold text-slate-700 bg-slate-100';
             }
         };
 
@@ -548,16 +526,20 @@
             
             document.getElementById('data-extrato').innerText = new Date(Date.now() - tzOffset).toLocaleDateString('pt-BR');
             
-            // Iniciar com categorias preenchidas
             window.popularTipos('tipo-custo');
             window.popularTipos('filtro-tipo');
         };
     </script>
 
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         
-        /* Ajuste visual para remover as setas do campo numérico e permitir navegação limpa com números negativos */
+        body { 
+            font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+            background-color: #f8fafc; /* slate-50 */
+        }
+        
+        /* Limpa setas de input number e ajusta visual */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
             -webkit-appearance: none; 
@@ -565,6 +547,16 @@
         }
         input[type=number] {
             -moz-appearance: textfield;
+        }
+
+        /* Estilização suave para ícone de calendário nativo */
+        ::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: 0.5;
+            transition: 0.2s;
+        }
+        ::-webkit-calendar-picker-indicator:hover {
+            opacity: 0.8;
         }
 
         @media print {
@@ -584,17 +576,16 @@
             }
             @page { 
                 size: A4 portrait; 
-                margin: 0.8cm 1cm 0.8cm 1cm; 
+                margin: 0.8cm 1cm; 
             }
             table.data-table { 
                 width: 100% !important; 
                 border-collapse: collapse !important; 
-                table-layout: auto !important; 
             }
             table.data-table th, table.data-table td { 
-                border: 1px solid #cbd5e1 !important; 
-                padding: 4px 6px !important; 
-                font-size: 7.5pt !important; 
+                border: 1px solid #e2e8f0 !important; 
+                padding: 6px 8px !important; 
+                font-size: 8pt !important; 
             }
             table.data-table th {
                 background-color: #065f46 !important;
@@ -605,150 +596,151 @@
         }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen p-2 md:p-6">
+<body class="text-slate-800 p-2 md:p-6">
 
-    <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-3 md:p-6 print-container">
+    <div class="max-w-6xl mx-auto print-container space-y-6">
         
         <!-- CABEÇALHO DA PÁGINA -->
-        <div class="border-b-2 border-emerald-800 pb-2 mb-3 flex justify-between items-end">
+        <div class="flex justify-between items-end border-b-2 border-emerald-800 pb-3">
             <div>
-                <h1 class="text-lg md:text-2xl font-bold text-emerald-800 uppercase tracking-tight">Extrato de Conciliação e Acerto de Sócios</h1>
-                <p class="text-xs font-bold text-slate-600">SOCIEDADE DR</p>
+                <h1 class="text-2xl font-bold text-emerald-800 tracking-tight">Extrato de Conciliação e Acerto</h1>
+                <p class="text-xs font-semibold text-slate-500 tracking-widest uppercase mt-0.5">Sociedade DR</p>
             </div>
-            <div class="text-right text-[11px] text-slate-600 leading-tight">
-                <p><b>Operador:</b> Deivid | <b>Sócio:</b> Ronei</p>
-                <p><b>Emissão:</b> <span id="data-extrato">--/--/----</span></p>
+            <div class="text-right text-[11px] text-slate-500">
+                <p>Operador: <span class="font-medium text-slate-700">Deivid</span> | Sócio: <span class="font-medium text-slate-700">Ronei</span></p>
+                <p class="mt-0.5">Emissão: <span id="data-extrato" class="font-medium text-slate-700">--/--/----</span></p>
             </div>
         </div>
 
-        <!-- FORMULÁRIO DE LANÇAMENTO -->
-        <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 no-print">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-sm font-bold text-slate-700 uppercase">Lançamento / Edição</h2>
-                <button type="button" onclick="configurarSaldoInicial()" class="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded border border-amber-300 uppercase transition">
-                    Saldo Inicial
+        <!-- FORMULÁRIO DE LANÇAMENTO (CARD) -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 no-print">
+            <div class="flex justify-between items-center mb-5 border-b border-slate-100 pb-3">
+                <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Lançamento Financeiro</h2>
+                <button type="button" onclick="configurarSaldoInicial()" class="text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded uppercase tracking-wider transition-colors border border-slate-200">
+                    Definir Saldo Inicial
                 </button>
             </div>
 
-            <form id="form-lancamento" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="md:col-span-4">
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Descrição / Fornecedor</label>
-                        <input type="text" id="descricao" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                    </div>
+            <form id="form-lancamento" class="space-y-5">
+                <!-- Linha 1 -->
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Descrição / Fornecedor</label>
+                    <input type="text" id="descricao" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
-                    <div class="md:col-span-1">
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Tipo de Custo</label>
-                        <select id="tipo-custo" onchange="window.popularCategorias('tipo-custo', 'categoria')" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                            <!-- Preenchido via JS -->
+                <!-- Linha 2 -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tipo de Custo</label>
+                        <select id="tipo-custo" onchange="window.popularCategorias('tipo-custo', 'categoria')" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                         </select>
                     </div>
-                    <div class="md:col-span-1">
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Categoria</label>
-                        <select id="categoria" onchange="window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria')" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Categoria</label>
+                        <select id="categoria" onchange="window.popularSubcategorias('tipo-custo', 'categoria', 'subcategoria')" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                             <option value="">Selecione...</option>
                         </select>
                     </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Subcategoria</label>
-                        <div class="flex mt-1 gap-2">
-                            <select id="subcategoria" required class="w-full p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Subcategoria</label>
+                        <div class="flex gap-2">
+                            <select id="subcategoria" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                                 <option value="">Selecione...</option>
                             </select>
-                            <button type="button" onclick="adicionarSubcategoria()" title="Adicionar Subcategoria nesta Categoria" class="px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-md uppercase text-[10px] transition">
-                                Adicionar
+                            <button type="button" onclick="adicionarSubcategoria()" class="px-4 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-bold rounded-md text-[10px] uppercase tracking-wider transition-colors shadow-sm">
+                                Novo
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
+                <!-- Linha 3 -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-5 pt-2 border-t border-slate-100">
                     <div>
-                        <label class="block text-[11px] font-bold text-emerald-800 uppercase">Valor (R$)</label>
-                        <input type="number" step="0.01" id="valor" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <label class="block text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1.5">Valor (R$)</label>
+                        <input type="number" step="0.01" id="valor" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                     </div>
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Data do Pagamento</label>
-                        <input type="date" id="data" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data</label>
+                        <input type="date" id="data" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                     </div>
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Quem Pagou / Enviou?</label>
-                        <select id="socio-pagador" class="w-full mt-1 p-2 border border-slate-300 rounded-md text-sm bg-white font-bold text-slate-800 focus:border-emerald-500 outline-none transition">
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pagador</label>
+                        <select id="socio-pagador" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition">
                             <option value="Deivid">Deivid</option>
                             <option value="Ronei">Ronei</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Anexo (PDF ou Foto)</label>
-                        <input type="file" id="anexo-pdf" accept="application/pdf,image/*" class="w-full mt-1 text-xs border border-slate-300 rounded-md p-1.5 bg-white">
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Anexo</label>
+                        <input type="file" id="anexo-pdf" accept="application/pdf,image/*" class="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 mt-1 cursor-pointer transition">
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center bg-slate-100 p-2.5 rounded-lg border border-slate-200 mt-4">
-                    <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-800 uppercase tracking-wide">
-                        <input type="checkbox" id="is-pendente" class="rounded text-amber-600 focus:ring-amber-500">
-                        Salvar como Pendente
+                <!-- Controles Finais do Form -->
+                <div class="flex flex-col sm:flex-row justify-between items-center bg-slate-50 px-4 py-3 rounded-lg border border-slate-200 mt-2 gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        <input type="checkbox" id="is-pendente" class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4">
+                        Marcar como Pendente
                     </label>
 
                     <div id="container-remover-anexo" class="hidden">
-                        <button type="button" onclick="removerAnexoExistente()" class="text-xs text-red-600 hover:underline font-bold uppercase tracking-wide">
-                            Remover Anexo Atual
+                        <button type="button" onclick="removerAnexoExistente()" class="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-wider transition-colors">
+                            Remover Anexo Existente
                         </button>
                     </div>
                 </div>
 
-                <div class="flex gap-2 pt-2">
-                    <button type="submit" id="btn-submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 rounded-lg text-sm transition shadow uppercase tracking-wider">
-                        Salvar no Banco de Dados
+                <div class="flex gap-3 pt-2">
+                    <button type="submit" id="btn-submit" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-sm">
+                        Salvar Lançamento
                     </button>
-                    <button type="button" id="btn-cancelar-edicao" onclick="cancelarEdicao()" class="hidden bg-slate-500 hover:bg-slate-600 text-white font-bold px-6 py-3 rounded-lg text-sm uppercase transition tracking-wider shadow">
-                        Cancelar
+                    <button type="button" id="btn-cancelar-edicao" onclick="cancelarEdicao()" class="hidden flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-sm">
+                        Cancelar Edição
                     </button>
                 </div>
             </form>
         </div>
 
-        <!-- FILTROS DE CONSULTA -->
-        <div class="mb-4 p-3 bg-slate-100 rounded-xl border border-slate-200 no-print">
-            <div class="flex justify-between items-center mb-3">
-                <span class="text-xs font-bold text-slate-700 uppercase tracking-wide">Filtros de Consulta</span>
-                <button onclick="limparFiltros()" class="text-[10px] text-emerald-700 font-bold uppercase hover:underline">Limpar Filtros</button>
+        <!-- FILTROS (CARD) -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 no-print">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-sm font-bold text-slate-800 uppercase tracking-wider">Filtros de Consulta</span>
+                <button onclick="limparFiltros()" class="text-[10px] text-emerald-700 font-bold uppercase tracking-wider hover:text-emerald-800 transition-colors">Limpar Filtros</button>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Data Inicial</label>
-                    <input type="date" id="filtro-data-ini" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data Inicial</label>
+                    <input type="date" id="filtro-data-ini" onchange="atualizarTela()" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Data Final</label>
-                    <input type="date" id="filtro-data-fim" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data Final</label>
+                    <input type="date" id="filtro-data-fim" onchange="atualizarTela()" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Pagador</label>
-                    <select id="filtro-pagador" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pagador</label>
+                    <select id="filtro-pagador" onchange="atualizarTela()" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                         <option value="">Todos</option>
                         <option value="Deivid">Deivid</option>
                         <option value="Ronei">Ronei</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Tipo</label>
-                    <select id="filtro-tipo" onchange="window.popularCategorias('filtro-tipo', 'filtro-categoria'); atualizarTela();" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tipo</label>
+                    <select id="filtro-tipo" onchange="window.popularCategorias('filtro-tipo', 'filtro-categoria'); atualizarTela();" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                         <option value="">Todos</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Categoria</label>
-                    <select id="filtro-categoria" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Categoria</label>
+                    <select id="filtro-categoria" onchange="atualizarTela()" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                         <option value="">Todas</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Status</label>
-                    <select id="filtro-status" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                    <select id="filtro-status" onchange="atualizarTela()" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                         <option value="">Todos</option>
                         <option value="concluidos">Concluídos</option>
                         <option value="pendentes">Pendentes</option>
@@ -757,66 +749,64 @@
             </div>
         </div>
 
-        <!-- CONTROLES -->
-        <div class="flex justify-between items-center mb-3 no-print">
-            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wide">Extrato em Nuvem</h2>
-            <div class="flex gap-2">
-                <button onclick="exportarExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2 rounded-lg text-[11px] uppercase transition shadow tracking-wide">
-                    Exportar Excel (.xlsx)
-                </button>
-                <button onclick="gerarPDF()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-lg text-[11px] uppercase transition shadow tracking-wide">
-                    Imprimir PDF
-                </button>
+        <!-- EXPORTAÇÃO E TABELA DE LANÇAMENTOS -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            
+            <div class="flex justify-between items-center p-4 border-b border-slate-200 bg-slate-50 no-print">
+                <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Lançamentos Registados</h2>
+                <div class="flex gap-2">
+                    <button onclick="exportarExcel()" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-3 py-1.5 rounded text-[10px] uppercase tracking-wider transition-colors shadow-sm">
+                        Excel (.xlsx)
+                    </button>
+                    <button onclick="gerarPDF()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold px-3 py-1.5 rounded text-[10px] uppercase tracking-wider transition-colors shadow-sm">
+                        Imprimir PDF
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="data-table w-full text-xs text-left">
+                    <thead>
+                        <tr class="bg-slate-800 text-slate-100 uppercase tracking-wider text-[10px]">
+                            <th class="px-4 py-3 font-semibold text-center w-[12%]">Data</th>
+                            <th class="px-4 py-3 font-semibold w-[38%]">Descrição & Classificação</th>
+                            <th class="px-4 py-3 font-semibold text-right w-[15%]">Aporte Ronei</th>
+                            <th class="px-4 py-3 font-semibold text-right w-[15%]">Aporte Deivid</th>
+                            <th class="px-4 py-3 font-semibold text-right w-[15%]">Saldo Final</th>
+                            <th class="px-4 py-3 font-semibold text-center w-[5%] no-print">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-corpo" class="divide-y divide-slate-100">
+                        <tr><td colspan="6" class="text-center py-6 text-slate-400 font-medium">A carregar dados...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- TABELA DE LANÇAMENTOS -->
-        <div class="overflow-x-auto mb-4 border border-slate-300 rounded">
-            <table class="data-table w-full text-xs border-collapse">
-                <thead>
-                    <tr class="bg-emerald-800 text-white text-center font-bold">
-                        <th class="p-2 border-b border-r border-emerald-900 w-[5%]">Nº</th>
-                        <th class="p-2 border-b border-r border-emerald-900 w-[10%]">DATA</th>
-                        <th class="p-2 border-b border-r border-emerald-900 text-left w-[36%]">DESCRIÇÃO / DETALHES CLASSIFICAÇÃO</th>
-                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[13%]">RONEI</th>
-                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[13%]">DEIVID</th>
-                        <th class="p-2 border-b border-r border-emerald-900 text-right w-[15%]">SALDO ACUMULADO</th>
-                        <th class="p-2 border-b border-emerald-900 w-[8%] no-print">AÇÕES</th>
-                    </tr>
-                </thead>
-                <tbody id="tabela-corpo">
-                    <tr><td colspan="7" class="text-center py-4 text-slate-400">Carregando dados...</td></tr>
-                </tbody>
-            </table>
-        </div>
-
         <!-- RESUMO CONSOLIDADO -->
-        <div class="flex justify-end mt-4">
-            <table class="w-full md:w-3/5 border-2 border-slate-800 text-xs rounded overflow-hidden">
-                <thead>
-                    <tr class="bg-slate-800 text-white font-bold uppercase text-center">
-                        <th colspan="2" class="p-2">Resumo Consolidado do Acerto</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                    <tr>
-                        <td class="p-2.5 text-slate-700 font-bold uppercase bg-slate-50">Saldo Inicial da Sociedade:</td>
-                        <td class="p-2.5 text-right font-mono font-bold text-slate-800 bg-slate-50" id="resumo-saldo-inicial">R$ 0,00</td>
-                    </tr>
-                    <tr>
-                        <td class="p-2.5 text-slate-700 font-bold uppercase">Total Aportado por RONEI:</td>
-                        <td class="p-2.5 text-right font-mono font-bold text-slate-800" id="resumo-ronei">R$ 0,00</td>
-                    </tr>
-                    <tr>
-                        <td class="p-2.5 text-slate-700 font-bold uppercase">Total Aportado por DEIVID:</td>
-                        <td class="p-2.5 text-right font-mono font-bold text-slate-800" id="resumo-deivid">R$ 0,00</td>
-                    </tr>
-                    <tr class="bg-slate-100 border-t-2 border-slate-800">
-                        <td class="p-2.5 font-bold uppercase text-slate-800 tracking-wide">POSIÇÃO FINAL ATUALIZADA:</td>
-                        <td class="p-2.5 text-right font-bold text-emerald-700" id="resumo-posicao">SALDOS ZERADOS</td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="flex justify-end">
+            <div class="w-full md:w-1/2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-800 text-white p-3 text-center">
+                    <h3 class="text-xs font-bold uppercase tracking-widest">Resumo Consolidado</h3>
+                </div>
+                <div class="divide-y divide-slate-100 text-xs">
+                    <div class="flex justify-between items-center p-3 bg-slate-50">
+                        <span class="text-slate-600 font-bold uppercase tracking-wider">Saldo Inicial Sociedade</span>
+                        <span class="font-mono font-bold text-slate-800" id="resumo-saldo-inicial">R$ 0,00</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3">
+                        <span class="text-slate-600 font-bold uppercase tracking-wider">Total Aportado: RONEI</span>
+                        <span class="font-mono font-bold text-slate-800" id="resumo-ronei">R$ 0,00</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3">
+                        <span class="text-slate-600 font-bold uppercase tracking-wider">Total Aportado: DEIVID</span>
+                        <span class="font-mono font-bold text-slate-800" id="resumo-deivid">R$ 0,00</span>
+                    </div>
+                    <div id="resumo-posicao" class="p-3 text-right font-bold text-slate-700 bg-slate-100">
+                        SALDOS ZERADOS
+                    </div>
+                </div>
+            </div>
         </div>
 
     </div>
