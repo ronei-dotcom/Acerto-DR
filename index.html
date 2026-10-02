@@ -28,16 +28,14 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const colRef = collection(db, "lancamentos_dr");
-        const colCcRef = collection(db, "centros_custo_dr");
         const colSubRef = collection(db, "subcategorias_dr");
         const configDocRef = doc(db, "configuracoes_dr", "saldo_inicial");
 
         let lancamentos = [];
-        let centrosCusto = ["Geral", "Arrendamento", "Nutrição / Ração", "Mão de Obra", "Infraestrutura", "Frete", "Compra de Gado", "Outros"];
         let editandoId = null;
         let saldoInicialObj = { valor: 0, credor: "Nenhum" };
 
-        // ESTRUTURA BASE DE CATEGORIAS (Conforme imagem)
+        // ESTRUTURA BASE DE CATEGORIAS
         const estruturaBase = {
             "Custos Fixos": {
                 "Mão de Obra": ["Salários e Encargos", "Prêmios e Benefícios", "Rescisões e acertos"],
@@ -64,7 +62,7 @@
 
         // CARREGAR SUBCATEGORIAS PERSONALIZADAS
         onSnapshot(colSubRef, (snapshot) => {
-            estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase)); // Reseta para a base
+            estruturaDinamica = JSON.parse(JSON.stringify(estruturaBase)); 
             snapshot.forEach(doc => {
                 const data = doc.data();
                 if (estruturaDinamica[data.tipo] && estruturaDinamica[data.tipo][data.categoria]) {
@@ -83,16 +81,6 @@
                 saldoInicialObj = docSnap.data();
             }
             atualizarTela();
-        });
-
-        // CARREGAR CENTROS DE CUSTO
-        onSnapshot(colCcRef, (snapshot) => {
-            const ccNuvem = [];
-            snapshot.forEach(d => ccNuvem.push(d.data().nome));
-            if (ccNuvem.length > 0) {
-                centrosCusto = Array.from(new Set([...centrosCusto, ...ccNuvem]));
-            }
-            atualizarSelectsCC();
         });
 
         // ESCUTAR LANÇAMENTOS EM TEMPO REAL
@@ -202,11 +190,9 @@
             btnSubmit.innerText = "Salvando...";
 
             const descricao = document.getElementById('descricao').value;
-            // Correção: Permitir números negativos, convertendo corretamente
             const valorRaw = document.getElementById('valor').value;
             const valor = valorRaw ? parseFloat(valorRaw) : 0;
             const data = document.getElementById('data').value;
-            const centroCusto = document.getElementById('centro-custo').value;
             const tipoCusto = document.getElementById('tipo-custo').value;
             const categoria = document.getElementById('categoria').value;
             const subcategoria = document.getElementById('subcategoria').value;
@@ -222,14 +208,14 @@
             try {
                 if (editandoId) {
                     const updateObj = { 
-                        descricao, valor, data, centroCusto, tipoCusto, categoria, subcategoria, socio, pendente: isPendente
+                        descricao, valor, data, tipoCusto, categoria, subcategoria, socio, pendente: isPendente
                     };
                     if (anexoData) updateObj.anexoData = anexoData;
                     await updateDoc(doc(db, "lancamentos_dr", editandoId), updateObj);
                     cancelarEdicao();
                 } else {
                     await addDoc(colRef, {
-                        descricao, valor, data, centroCusto: centroCusto || "Geral", tipoCusto, categoria, subcategoria, socio, pendente: isPendente, anexoData: anexoData || null, criadoEm: new Date().toISOString()
+                        descricao, valor, data, tipoCusto, categoria, subcategoria, socio, pendente: isPendente, anexoData: anexoData || null, criadoEm: new Date().toISOString()
                     });
                     limparFormulario();
                 }
@@ -278,7 +264,6 @@
                     "Nº": index + 1,
                     "Data": formatarData(item.data),
                     "Descrição": item.descricao,
-                    "Centro de Custo": item.centroCusto || 'Geral',
                     "Tipo de Custo": item.tipoCusto || '',
                     "Categoria": item.categoria || 'Outros',
                     "Subcategoria": item.subcategoria || '',
@@ -328,7 +313,6 @@
             document.getElementById('descricao').value = item.descricao;
             document.getElementById('valor').value = item.valor;
             document.getElementById('data').value = item.data;
-            document.getElementById('centro-custo').value = item.centroCusto || 'Geral';
             document.getElementById('socio-pagador').value = item.socio;
             document.getElementById('is-pendente').checked = !!item.pendente;
 
@@ -420,38 +404,6 @@
             }
         };
 
-        // GERENCIAR CENTROS DE CUSTO
-        window.adicionarCentroCusto = async function() {
-            const novoCc = prompt("Digite o nome do novo Centro de Custo (Ex: Retiro 1, Lote Bezerros):");
-            if (novoCc && novoCc.trim() !== "") {
-                try {
-                    await addDoc(colCcRef, { nome: novoCc.trim() });
-                    alert("Centro de custo cadastrado com sucesso.");
-                } catch (e) {
-                    alert("Erro ao cadastrar centro de custo.");
-                }
-            }
-        };
-
-        function atualizarSelectsCC() {
-            const selectForm = document.getElementById('centro-custo');
-            const selectFiltro = document.getElementById('filtro-cc');
-
-            const valorAnteriorForm = selectForm.value;
-            const valorAnteriorFiltro = selectFiltro.value;
-
-            selectForm.innerHTML = '';
-            selectFiltro.innerHTML = '<option value="">Todos os Centros de Custo</option>';
-
-            centrosCusto.forEach(cc => {
-                selectForm.innerHTML += `<option value="${cc}">${cc}</option>`;
-                selectFiltro.innerHTML += `<option value="${cc}">${cc}</option>`;
-            });
-
-            if (valorAnteriorForm) selectForm.value = valorAnteriorForm;
-            if (valorAnteriorFiltro) selectFiltro.value = valorAnteriorFiltro;
-        }
-
         // FUNÇÃO DE ATUALIZAR TELA E FILTRAR
         window.atualizarTela = function() {
             const corpoTabela = document.getElementById('tabela-corpo');
@@ -463,7 +415,6 @@
             const filtroPagador = document.getElementById('filtro-pagador').value;
             const filtroTipo = document.getElementById('filtro-tipo').value;
             const filtroCategoria = document.getElementById('filtro-categoria').value;
-            const filtroCC = document.getElementById('filtro-cc').value;
             const filtroStatus = document.getElementById('filtro-status').value;
 
             let lancamentosFiltrados = lancamentos.filter(item => {
@@ -472,7 +423,6 @@
                 if (filtroPagador && item.socio !== filtroPagador) return false;
                 if (filtroTipo && item.tipoCusto !== filtroTipo) return false;
                 if (filtroCategoria && item.categoria !== filtroCategoria) return false;
-                if (filtroCC && (item.centroCusto || 'Geral') !== filtroCC) return false;
                 if (filtroStatus === 'pendentes' && !item.pendente) return false;
                 if (filtroStatus === 'concluidos' && item.pendente) return false;
                 return true;
@@ -531,7 +481,7 @@
                             ${item.pendente ? '<span class="bg-amber-200 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded">PENDENTE</span>' : ''}
                             <span>${item.descricao}</span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-normal">🏷️ ${item.centroCusto || 'Geral'} | ${classificacaoFormatada}</div>
+                        <div class="text-[10px] text-slate-500 font-normal">${classificacaoFormatada}</div>
                     </td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei !== 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid !== 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
@@ -585,7 +535,6 @@
             document.getElementById('filtro-tipo').value = '';
             window.popularCategorias('filtro-tipo', 'filtro-categoria');
             document.getElementById('filtro-categoria').value = '';
-            document.getElementById('filtro-cc').value = '';
             document.getElementById('filtro-status').value = '';
             atualizarTela();
         };
@@ -608,7 +557,7 @@
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; }
         
-        /* Ajuste visual para remover as setas do campo numérico em alguns navegadores quando type="number" e permitir navegação limpa com números negativos */
+        /* Ajuste visual para remover as setas do campo numérico e permitir navegação limpa com números negativos */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
             -webkit-appearance: none; 
@@ -676,26 +625,16 @@
         <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 no-print">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-sm font-bold text-slate-700 uppercase">Lançamento / Edição</h2>
-                <div class="flex gap-2">
-                    <button type="button" onclick="configurarSaldoInicial()" class="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded border border-amber-300 uppercase transition">
-                        Saldo Inicial
-                    </button>
-                    <button type="button" onclick="adicionarCentroCusto()" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded border border-emerald-300 uppercase transition">
-                        Novo Centro de Custo
-                    </button>
-                </div>
+                <button type="button" onclick="configurarSaldoInicial()" class="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded border border-amber-300 uppercase transition">
+                    Saldo Inicial
+                </button>
             </div>
 
             <form id="form-lancamento" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-4">
                         <label class="block text-[11px] font-bold text-slate-600 uppercase">Descrição / Fornecedor</label>
-                        <input type="text" id="descricao" placeholder="Ex: Arrendamento Dinei" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-[11px] font-bold text-slate-600 uppercase">Centro de Custo</label>
-                        <select id="centro-custo" class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
-                        </select>
+                        <input type="text" id="descricao" required class="w-full mt-1 p-2 border rounded-md text-sm border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
                 </div>
 
@@ -728,8 +667,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
                     <div>
                         <label class="block text-[11px] font-bold text-emerald-800 uppercase">Valor (R$)</label>
-                        <!-- type alterado para texto para aceitar livremente símbolos como o menos (-) em qualquer dispositivo, convertido em float pelo Javascript -->
-                        <input type="number" step="0.01" id="valor" placeholder="0.00 ou -0.00" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <input type="number" step="0.01" id="valor" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-600 uppercase">Data do Pagamento</label>
@@ -779,7 +717,7 @@
                 <button onclick="limparFiltros()" class="text-[10px] text-emerald-700 font-bold uppercase hover:underline">Limpar Filtros</button>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-7 gap-2 text-xs">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase">Data Inicial</label>
                     <input type="date" id="filtro-data-ini" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300">
@@ -794,11 +732,6 @@
                         <option value="">Todos</option>
                         <option value="Deivid">Deivid</option>
                         <option value="Ronei">Ronei</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Centro de Custo</label>
-                    <select id="filtro-cc" onchange="atualizarTela()" class="w-full p-1.5 border rounded border-slate-300 bg-white">
                     </select>
                 </div>
                 <div>
