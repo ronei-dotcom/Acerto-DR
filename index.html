@@ -202,7 +202,9 @@
             btnSubmit.innerText = "Salvando...";
 
             const descricao = document.getElementById('descricao').value;
-            const valor = parseFloat(document.getElementById('valor').value) || 0;
+            // Correção: Permitir números negativos, convertendo corretamente
+            const valorRaw = document.getElementById('valor').value;
+            const valor = valorRaw ? parseFloat(valorRaw) : 0;
             const data = document.getElementById('data').value;
             const centroCusto = document.getElementById('centro-custo').value;
             const tipoCusto = document.getElementById('tipo-custo').value;
@@ -494,7 +496,6 @@
                 const isTransferencia = item.categoria === 'Transferência entre Sócios' || item.subcategoria === 'Transferência entre Sócios';
 
                 if (isTransferencia) {
-                    // Correção: Agora o valor do Aporte é atribuído à coluna visual corretamente
                     if (item.socio === 'Ronei') {
                         aporteRonei = item.valor;
                         totalRonei += item.valor * 2;
@@ -532,8 +533,8 @@
                         </div>
                         <div class="text-[10px] text-slate-500 font-normal">🏷️ ${item.centroCusto || 'Geral'} | ${classificacaoFormatada}</div>
                     </td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei > 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
-                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid > 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
+                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteRonei !== 0 ? 'R$ ' + aporteRonei.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
+                    <td class="p-1.5 text-right font-mono whitespace-nowrap">${aporteDeivid !== 0 ? 'R$ ' + aporteDeivid.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'R$ 0,00'}</td>
                     <td class="p-1.5 text-right font-mono whitespace-nowrap ${corTexto}">R$ ${Math.abs(saldoAcumulado).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     <td class="p-1.5 text-center no-print whitespace-nowrap">
                         <div class="flex items-center justify-center gap-2">
@@ -607,6 +608,16 @@
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; }
         
+        /* Ajuste visual para remover as setas do campo numérico em alguns navegadores quando type="number" e permitir navegação limpa com números negativos */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
         @media print {
             .no-print { display: none !important; }
             html, body { 
@@ -717,7 +728,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-slate-200 pt-4 mt-2">
                     <div>
                         <label class="block text-[11px] font-bold text-emerald-800 uppercase">Valor (R$)</label>
-                        <input type="number" step="0.01" id="valor" placeholder="0.00" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
+                        <!-- type alterado para texto para aceitar livremente símbolos como o menos (-) em qualquer dispositivo, convertido em float pelo Javascript -->
+                        <input type="number" step="0.01" id="valor" placeholder="0.00 ou -0.00" required class="w-full mt-1 p-2 border rounded-md text-sm border-emerald-300 bg-emerald-50 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition">
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-600 uppercase">Data do Pagamento</label>
